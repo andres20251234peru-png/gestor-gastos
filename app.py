@@ -450,18 +450,27 @@ div[data-testid="stToast"] p, div[data-testid="stToast"] svg {{
 # ============================================================
 @st.cache_resource
 def get_client():
-    if not os.path.exists("credentials.json"):
-        return None
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
     try:
-        creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
-        return gspread.authorize(creds)
-    except:
-        return None
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
 
+        service_account_info = json.loads(
+            st.secrets["GCP_SERVICE_ACCOUNT"]
+        )
+
+        creds = Credentials.from_service_account_info(
+            service_account_info,
+            scopes=scope
+        )
+
+        return gspread.authorize(creds)
+
+    except Exception as e:
+        st.error("❌ Error conectando con Google Sheets")
+        st.exception(e)
+        return None
 def normalize_mes_es(m):
     if not isinstance(m, str):
         return None
@@ -1533,3 +1542,4 @@ try:
 except Exception:
     st.error("Error fatal en la app")
     st.code(traceback.format_exc())
+
