@@ -1,0 +1,8 @@
+streamlit
+gspread
+google-auth
+pandas
+plotly==5.24.1
+google-generativeai
+python-dotenv
+matplotlib
