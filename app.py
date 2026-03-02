@@ -37,6 +37,20 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ── Meta tags PWA (iPhone "Añadir a pantalla de inicio") ──
+st.markdown("""
+<head>
+  <!-- PWA: se ve como app nativa en iPhone -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Gastos">
+  <meta name="theme-color" content="#000000">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Ícono para pantalla de inicio iPhone -->
+  <link rel="apple-touch-icon" href="https://em-content.zobj.net/source/apple/354/money-bag_1f4b0.png">
+</head>
+""", unsafe_allow_html=True)
+
 env_path = pathlib.Path(".") / ".env"
 if not env_path.exists():
     env_path = pathlib.Path(".") / ".env.local"
@@ -445,6 +459,42 @@ div[data-testid="stToast"] {{
 }}
 div[data-testid="stToast"] p, div[data-testid="stToast"] svg {{
   color: #fff !important; fill: #fff !important;
+}}
+
+/* ── PWA / iPhone safe area ── */
+.block-container {{
+  padding-bottom: max(60px, env(safe-area-inset-bottom)) !important;
+  padding-top: max(20px, env(safe-area-inset-top)) !important;
+}}
+
+/* Ocultar completamente la toolbar de Streamlit en modo app */
+#MainMenu, header, footer,
+div[data-testid="stToolbar"],
+div[data-testid="stDecoration"],
+div[data-testid="stStatusWidget"] {{
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+}}
+
+/* Fondo negro total sin bordes blancos */
+html, body {{
+  background: #000000 !important;
+  overflow-x: hidden !important;
+}}
+
+/* Fuente más grande en mobile para mejor legibilidad */
+@media (max-width: 599px) {{
+  .block-container {{
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }}
+  .badge {{
+    font-size: .7rem !important;
+  }}
+  .section-title {{
+    font-size: .75rem !important;
+  }}
 }}
 </style>
     """, unsafe_allow_html=True)
