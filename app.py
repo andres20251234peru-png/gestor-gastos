@@ -110,6 +110,7 @@ _DEFAULTS = {
     "show_success":   False,
     "preview_data":   None,
     "data_loaded":    False,
+    "show_picker":     False,
 }
 for k, v in _DEFAULTS.items():
     if k not in st.session_state:
@@ -221,6 +222,18 @@ div[role="radiogroup"] label:has(input:checked) p {{
   color: #000 !important; font-weight: 900 !important;
 }}
 div[role="radiogroup"] label > div:first-child {{ display: none; }}
+/* Mobile: 2 columnas iguales */
+@media (max-width: 599px) {{
+  div[role="radiogroup"] {{
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }}
+  div[role="radiogroup"] label {{
+    justify-content: center !important;
+    text-align: center !important;
+  }}
+}}
 
 /* ── Card total ── */
 .card {{
@@ -238,9 +251,11 @@ div[role="radiogroup"] label > div:first-child {{ display: none; }}
   margin-bottom: 10px !important; text-align: center !important; font-weight: 800 !important;
 }}
 .card-amount {{
-  font-size: 3.2rem !important; font-weight: 900 !important; margin: 0 !important;
-  text-align: center !important; color: #FFFFFF !important; line-height: 1 !important;
+  font-size: clamp(2rem, 8vw, 3.2rem) !important;
+  font-weight: 900 !important; margin: 0 !important;
+  text-align: center !important; color: #FFFFFF !important; line-height: 1.1 !important;
   font-family: 'JetBrains Mono', monospace !important;
+  word-break: keep-all !important; white-space: nowrap !important;
 }}
 .card-sub {{
   color: #8fa397 !important; font-size: .82rem !important;
@@ -277,15 +292,23 @@ div[role="radiogroup"] label > div:first-child {{ display: none; }}
 .success-sub   {{ font-size: .82rem; color: #8fa397; font-weight: 700; }}
 
 /* ── Stat pills ── */
-.stat-row  {{ display: flex; gap: 10px; margin-top: 12px; }}
+.stat-row {{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}}
 .stat-pill {{
-  flex: 1; background: #111; border: 1px solid #1f1f1f;
+  background: #111; border: 1px solid #1f1f1f;
   border-radius: 18px; padding: 12px 14px;
   display: flex; flex-direction: column; gap: 3px;
 }}
 .stat-label {{ color: #555; font-size: .72rem; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }}
 .stat-value {{ color: #fff; font-size: 1.05rem; font-weight: 900; font-family: 'JetBrains Mono', monospace; }}
 .stat-value.green {{ color: {p} !important; }}
+@media (min-width: 600px) {{
+  .stat-row {{ grid-template-columns: repeat(4, 1fr); }}
+}}
 
 /* ── Badge ── */
 .badge {{
@@ -295,9 +318,20 @@ div[role="radiogroup"] label > div:first-child {{ display: none; }}
 }}
 
 /* ── Nav mes ── */
+.month-nav-wrap {{
+  display: flex; align-items: center; justify-content: space-between;
+  background: #111; border: 1px solid #1f1f1f; border-radius: 18px;
+  padding: 6px 10px; margin: 8px 0;
+}}
 .month-label {{
-  font-size: 1.05rem; font-weight: 900; color: #fff;
-  text-align: center; padding-top: 8px;
+  font-size: 1.05rem; font-weight: 900; color: #fff; text-align: center;
+}}
+/* Picker de meses en grid 3x4 */
+.month-grid {{
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 8px !important;
+  padding: 8px 0 !important;
 }}
 
 /* ── Section title ── */
@@ -831,39 +865,53 @@ def main_view():
     st.write("")
 
     # ── Navegación rápida mes ────────────────────────────────
-    c_prev, c_lbl, c_next, c_pick = st.columns([1, 5, 1, 1.5], vertical_alignment="center")
-    with c_prev:
+    # Fila compacta: ‹  Mes Año  ›  [📅]
+    cn1, cn2, cn3, cn4 = st.columns([1, 5, 1, 1], vertical_alignment="center")
+    with cn1:
         if st.button("‹", key="pm", type="secondary", use_container_width=True):
             prev_month(); st.rerun()
-    with c_lbl:
+    with cn2:
         st.markdown(
             f'<div class="month-label">{st.session_state.sel_month} {st.session_state.sel_year}</div>',
             unsafe_allow_html=True,
         )
-    with c_next:
+    with cn3:
         if st.button("›", key="nm", type="secondary", use_container_width=True):
             next_month(); st.rerun()
-    with c_pick:
-        with st.expander("📅"):
-            cy1, cy2, cy3 = st.columns([1,2,1])
-            with cy1:
+    with cn4:
+        if st.button("📅", key="openpick", type="secondary", use_container_width=True):
+            st.session_state.show_picker = not st.session_state.get("show_picker", False)
+            st.rerun()
+
+    # Picker año+mes — aparece debajo cuando se abre
+    if st.session_state.get("show_picker", False):
+        with st.container():
+            # Selector de año
+            py1, py2, py3 = st.columns([1, 3, 1])
+            with py1:
                 if st.button("‹", key="py", type="secondary", use_container_width=True):
                     st.session_state.sel_year -= 1; st.rerun()
-            with cy2:
-                st.markdown(f"<div style='text-align:center;font-weight:900;padding-top:8px;'>{st.session_state.sel_year}</div>",
-                            unsafe_allow_html=True)
-            with cy3:
+            with py2:
+                st.markdown(
+                    f"<div style='text-align:center;font-weight:900;font-size:1.1rem;padding-top:6px;'>{st.session_state.sel_year}</div>",
+                    unsafe_allow_html=True)
+            with py3:
                 if st.button("›", key="ny", type="secondary", use_container_width=True):
                     st.session_state.sel_year += 1; st.rerun()
+
+            st.write("")
+            # Grid 3x4 de meses — siempre 3 columnas
             abbrs = ["ENE","FEB","MAR","ABR","MAY","JUN","JUL","AGO","SEP","OCT","NOV","DIC"]
-            for row in [abbrs[i:i+3] for i in range(0,12,3)]:
+            for row in [abbrs[i:i+3] for i in range(0, 12, 3)]:
                 cols = st.columns(3)
                 for i, abbr in enumerate(row):
                     full = MESES_ORD[abbrs.index(abbr)]
                     with cols[i]:
                         t = "primary" if full == st.session_state.sel_month else "secondary"
                         if st.button(abbr, key=f"mp_{abbr}", type=t, use_container_width=True):
-                            st.session_state.sel_month = full; st.rerun()
+                            st.session_state.sel_month = full
+                            st.session_state.show_picker = False
+                            st.rerun()
 
     mes_sel  = st.session_state.sel_month
     anio_sel = st.session_state.sel_year
