@@ -1,5 +1,5 @@
 # ============================================================
-# GESTOR DE GASTOS v3.0
+# GESTOR DE GASTOS v3.1
 # ============================================================
 # Mejoras v3:
 #   - Sin IA (eliminado completamente)
@@ -11,6 +11,13 @@
 #   - Animación visual al guardar (flash verde)
 #   - Botón eliminar compacto (mobile-friendly)
 #   - Fix zona horaria Perú (UTC-5)
+# Mejoras v3.1:
+#   - Presupuesto persistente en Google Sheets (tab "Presupuesto")
+#   - Botón "➕ Nuevo gasto" flotante en móvil (siempre visible)
+#   - Chips de categoría más grandes y táctiles en iPhone
+#   - Alerta visual al superar 80% / 100% del presupuesto
+#   - Racha corregida: días CON gasto consecutivos (gastos hormiga)
+#   - Teclado numérico en monto al abrir formulario (inputmode)
 # ============================================================
 
 import streamlit as st
@@ -461,7 +468,77 @@ div[data-testid="stToast"] p, div[data-testid="stToast"] svg {{
   color: #fff !important; fill: #fff !important;
 }}
 
-/* ── PWA / iPhone safe area ── */
+/* ── FAB: botón flotante móvil ── */
+.fab-container {{
+  display: none;
+}}
+@media (max-width: 599px) {{
+  .fab-container {{
+    display: block;
+    position: fixed;
+    bottom: max(24px, env(safe-area-inset-bottom));
+    right: 20px;
+    z-index: 9999;
+  }}
+  .fab-btn {{
+    background: {p};
+    color: #000;
+    font-weight: 900;
+    font-size: 1.1rem;
+    border: none;
+    border-radius: 999px;
+    padding: 16px 24px;
+    box-shadow: 0 8px 24px rgba(0,224,84,0.45);
+    cursor: pointer;
+    white-space: nowrap;
+  }}
+}}
+
+/* ── Chips de categoría táctiles (iPhone) ── */
+@media (max-width: 599px) {{
+  div[role="radiogroup"] label {{
+    padding: 14px 10px !important;
+    font-size: 1rem !important;
+    min-height: 52px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }}
+  div[role="radiogroup"] label p {{
+    font-size: .95rem !important;
+  }}
+}}
+
+/* ── Alerta presupuesto ── */
+.budget-alert {{
+  border-radius: 14px;
+  padding: 12px 16px;
+  margin-top: 10px;
+  font-weight: 800;
+  font-size: .88rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}}
+.budget-alert.warn {{
+  background: rgba(255,199,0,0.1);
+  border: 1px solid rgba(255,199,0,0.3);
+  color: #FFC700;
+}}
+.budget-alert.danger {{
+  background: rgba(255,75,75,0.1);
+  border: 1px solid rgba(255,75,75,0.35);
+  color: #FF4B4B;
+}}
+
+/* ── Input numérico más grande en móvil ── */
+@media (max-width: 599px) {{
+  div[data-testid="stNumberInput"] input {{
+    font-size: 2.6rem !important;
+    padding: 18px 0 !important;
+  }}
+}}
+
 .block-container {{
   padding-bottom: max(60px, env(safe-area-inset-bottom)) !important;
   padding-top: max(20px, env(safe-area-inset-top)) !important;
@@ -649,8 +726,77 @@ def delete_from_sheet(gasto_id: str) -> tuple[bool, str]:
 
 
 # ============================================================
-# 6) HELPERS DE DATOS
+# 5b) PRESUPUESTO PERSISTENTE (tab "Presupuesto" en el Sheet)
 # ============================================================
+BUDGET_SHEET = "Presupuesto"   # nombre de la segunda hoja
+
+
+def _get_budget_sheet():
+    """Devuelve la hoja Presupuesto, creándola si no existe."""
+    client = get_client()
+    if not client:
+        return None
+    try:
+        ss = client.open(SHEET_NAME)
+        try:
+            return ss.worksheet(BUDGET_SHEET)
+        except Exception:
+            ws = ss.add_worksheet(title=BUDGET_SHEET, rows=50, cols=4)
+            ws.update("A1:D1", [["AÑO", "MES", "PRESUPUESTO", "UPDATED"]])
+            return ws
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_budgets() -> dict:
+    """Carga todos los presupuestos → {(año, mes): valor}."""
+    ws = _get_budget_sheet()
+    if not ws:
+        return {}
+    try:
+        rows = ws.get_all_records()
+        out  = {}
+        for r in rows:
+            try:
+                anio = int(r.get("AÑO", 0))
+                mes  = str(r.get("MES", "")).strip()
+                val  = float(r.get("PRESUPUESTO", 0))
+                if anio > 0 and mes and val > 0:
+                    out[(anio, mes)] = val
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return {}
+
+
+def save_budget(anio: int, mes: str, valor: float):
+    """Guarda o actualiza el presupuesto de un mes/año en Sheets."""
+    ws = _get_budget_sheet()
+    if not ws:
+        return False
+    try:
+        rows   = ws.get_all_values()
+        header = [h.upper() for h in rows[0]] if rows else []
+        # Buscar fila existente
+        for i, row in enumerate(rows[1:], start=2):
+            if len(row) >= 3:
+                try:
+                    if int(row[0]) == anio and row[1].strip() == mes:
+                        ws.update(f"C{i}:D{i}", [[valor, dt.datetime.now().strftime("%Y-%m-%d %H:%M")]])
+                        load_budgets.clear()
+                        return True
+                except Exception:
+                    pass
+        # Fila nueva
+        ws.append_row([anio, mes, valor, dt.datetime.now().strftime("%Y-%m-%d %H:%M")])
+        load_budgets.clear()
+        return True
+    except Exception:
+        return False
+
+
 def now_peru() -> dt.datetime:
     return dt.datetime.now(TZ_OFFSET)
 
@@ -677,18 +823,17 @@ def compute_stats(dfm: pd.DataFrame, total: float) -> dict:
     }
 
 
-def days_without_expense(df: pd.DataFrame) -> int:
-    """Días consecutivos sin gasto — vectorizado."""
+def days_with_expense_streak(df: pd.DataFrame) -> int:
+    """Racha: días CONSECUTIVOS con al menos un gasto (hasta hoy)."""
     if df.empty:
         return 0
     today = now_peru().date()
     dates = set(df["FECHA"].dropna().dt.date.unique())
-    past  = pd.date_range(end=today - dt.timedelta(days=1), periods=365, freq="D")
     streak = 0
-    for d in reversed(past):
-        if d.date() in dates:
-            break
+    d = today
+    while d in dates:
         streak += 1
+        d -= dt.timedelta(days=1)
     return streak
 
 
@@ -969,8 +1114,9 @@ def main_view():
     total    = float(dfm["MONTO"].sum()) if not dfm.empty else 0.0
     stats    = compute_stats(dfm, total)
 
-    # ── Card total ──────────────────────────────────────────
-    presup       = st.session_state.presupuesto.get(mes_sel, 0)
+    # ── Cargar presupuesto persistente ──────────────────────
+    budgets = load_budgets()
+    presup  = budgets.get((anio_sel, mes_sel), 0.0)
     presup_pct   = min(total / presup * 100, 100) if presup > 0 else 0
     presup_color = (THEME["primary"] if presup_pct < 80
                     else THEME["warning"] if presup_pct < 100
@@ -998,7 +1144,7 @@ def main_view():
 
     # ── Stats ────────────────────────────────────────────────
     if stats:
-        streak = days_without_expense(df)
+        streak = days_with_expense_streak(df)
         green  = "green" if streak > 0 else ""
         st.markdown(f"""
             <div class="stat-row">
@@ -1021,6 +1167,19 @@ def main_view():
             </div>
         """, unsafe_allow_html=True)
 
+    # ── Alerta presupuesto ──────────────────────────────────
+    if presup > 0:
+        if presup_pct >= 100:
+            st.markdown(
+                f'<div class="budget-alert danger">🚨 Superaste el presupuesto de S/ {presup:,.0f} — llevas S/ {total:,.2f}</div>',
+                unsafe_allow_html=True,
+            )
+        elif presup_pct >= 80:
+            st.markdown(
+                f'<div class="budget-alert warn">⚠️ Ya usaste el {presup_pct:.0f}% — te quedan S/ {max(presup-total,0):,.2f}</div>',
+                unsafe_allow_html=True,
+            )
+
     # ── Acciones ─────────────────────────────────────────────
     st.write("")
     if not dfm.empty:
@@ -1039,14 +1198,30 @@ def main_view():
     if st.session_state.budget_mode:
         with st.expander("🎯 Presupuesto mensual", expanded=True):
             bv = st.number_input(
-                f"Presupuesto para {mes_sel} (S/)", min_value=0.0, step=50.0,
-                value=float(st.session_state.presupuesto.get(mes_sel, 0)),
+                f"Presupuesto para {mes_sel} {anio_sel} (S/)", min_value=0.0, step=50.0,
+                value=float(presup),
             )
             if st.button("Guardar presupuesto", type="primary"):
-                st.session_state.presupuesto[mes_sel] = bv
+                with st.spinner("Guardando en la nube…"):
+                    ok = save_budget(anio_sel, mes_sel, bv)
                 st.session_state.budget_mode = False
-                st.toast(f"Presupuesto S/ {bv:,.0f} guardado 🎯")
+                if ok:
+                    st.toast(f"Presupuesto S/ {bv:,.0f} guardado 🎯")
+                else:
+                    st.toast("⚠️ No se pudo guardar en Sheets — revisa la conexión")
                 st.rerun()
+
+    # ── FAB móvil (siempre visible en iPhone) ───────────────
+    st.markdown("""
+        <div class="fab-container">
+          <button class="fab-btn" onclick="
+            // dispara click en el botón real de Streamlit
+            const btns = Array.from(document.querySelectorAll('button'));
+            const nuevo = btns.find(b => b.innerText.includes('Nuevo gasto'));
+            if(nuevo) nuevo.click();
+          ">➕ Nuevo gasto</button>
+        </div>
+    """, unsafe_allow_html=True)
 
     # ── Búsqueda ─────────────────────────────────────────────
     if not dfm.empty:
@@ -1304,6 +1479,23 @@ def add_view():
 # 11) ENTRY POINT
 # ============================================================
 inject_css()
+
+# Forzar teclado numérico en iPhone para campos de monto
+st.markdown("""
+<script>
+(function() {
+  function patchInputs() {
+    document.querySelectorAll('input[type="number"]').forEach(function(el) {
+      el.setAttribute('inputmode', 'decimal');
+      el.setAttribute('pattern', '[0-9]*');
+    });
+  }
+  patchInputs();
+  var obs = new MutationObserver(patchInputs);
+  obs.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+""", unsafe_allow_html=True)
 try:
     if st.session_state.view == "main":
         main_view()
