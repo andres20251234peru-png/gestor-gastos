@@ -211,6 +211,18 @@ input[type="text"]:focus, div[data-testid="stTextInput"] input:focus {
 }
 input[type="text"]::placeholder,
 div[data-testid="stTextInput"] input::placeholder { color: #252525 !important; }
+/* Monto input — grande y centrado */
+div[data-testid="stTextInput"]:has([placeholder="0.00"]) input {
+  font-size: clamp(2.2rem, 8vw, 3.5rem) !important;
+  font-weight: 800 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  text-align: center !important;
+  letter-spacing: -1.5px !important;
+  color: #f0f0f0 !important;
+  border-radius: 18px !important;
+  padding: 20px 16px !important;
+  caret-color: #00E054 !important;
+}
 div[data-testid="stNumberInput"] {
   background: transparent !important; border: none !important;
   width: 100% !important;
@@ -745,66 +757,51 @@ def _fig_base(w=5, h=5, dpi=200):
 
 
 def render_donut(grp_df: pd.DataFrame, center_cat: str, center_pct: float):
-    """Donut SVG puro — sin matplotlib, siempre renderiza en iPhone."""
+    """Donut SVG con stroke-dasharray — geometría correcta garantizada."""
     import math
-    size   = 220
-    cx, cy = size / 2, size / 2
-    r_out  = 88
-    r_in   = 62
-    stroke = r_out - r_in
+    size = 200
+    cx = cy = size / 2
+    r = 72
+    circumference = 2 * math.pi * r
 
-    total_val = grp_df["MONTO"].sum()
-    slices    = []
-    angle     = -90.0  # start from top
+    total_val = float(grp_df["MONTO"].sum())
+    circles   = []
+    offset    = circumference * 0.25  # start from top
 
     for _, row in grp_df.iterrows():
         cat   = row["CATEGORÍA"]
         pct   = float(row["MONTO"]) / total_val if total_val > 0 else 0
-        sweep = pct * 360
+        dash  = pct * circumference
         color = COLORS_MAP.get(cat, "#555")
-        slices.append((angle, sweep, color, cat))
-        angle += sweep
+        circles.append((dash, offset, color))
+        offset += dash  # next slice starts where this ends (wrap handled by SVG)
 
-    def arc_path(start_deg, sweep_deg, r, cx, cy):
-        if sweep_deg >= 359.9:
-            sweep_deg = 359.9
-        start_r  = math.radians(start_deg)
-        end_r    = math.radians(start_deg + sweep_deg)
-        x1 = cx + r * math.cos(start_r)
-        y1 = cy + r * math.sin(start_r)
-        x2 = cx + r * math.cos(end_r)
-        y2 = cy + r * math.sin(end_r)
-        large = 1 if sweep_deg > 180 else 0
-        return f"M {x1:.2f} {y1:.2f} A {r} {r} 0 {large} 1 {x2:.2f} {y2:.2f}"
+    rings_svg = ""
+    for dash, off, color in circles:
+        gap = circumference - dash
+        rings_svg += (
+            f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" '
+            f'stroke="{color}" stroke-width="28" stroke-opacity="0.92" '
+            f'stroke-dasharray="{dash:.2f} {gap:.2f}" '
+            f'stroke-dashoffset="-{off:.2f}" '
+            f'transform="rotate(-90 {cx} {cy})"/>\n'
+        )
 
-    paths_svg = ""
-    for (start, sweep, color, cat) in slices:
-        if sweep < 0.5:
-            continue
-        outer = arc_path(start, sweep, r_out, cx, cy)
-        inner = arc_path(start + sweep, -sweep, r_in, cx, cy)
-        x_start_i = cx + r_in * math.cos(math.radians(start))
-        y_start_i = cy + r_in * math.sin(math.radians(start))
-        d = f"{outer} L {x_start_i:.2f} {y_start_i:.2f} {inner} Z"
-        paths_svg += f'<path d="{d}" fill="{color}" opacity="0.9"/>\n'
+    label_short = center_cat[:9] + "…" if len(center_cat) > 9 else center_cat
+    color_pct   = COLORS_MAP.get(center_cat, "#00E054")
 
-    label_short = center_cat[:10] + "…" if len(center_cat) > 10 else center_cat
-    svg = f"""
-    <svg viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg"
-         style="width:100%;max-width:220px;display:block;margin:0 auto;">
-      <circle cx="{cx}" cy="{cy}" r="{r_out + 4}" fill="#0a0a0a"/>
-      {paths_svg}
-      <circle cx="{cx}" cy="{cy}" r="{r_in - 2}" fill="#060606"/>
-      <text x="{cx}" y="{cy - 10}" text-anchor="middle" dominant-baseline="middle"
-            font-size="9" font-weight="600" fill="#333"
-            font-family="Inter, sans-serif" letter-spacing="1.5">{label_short.upper()}</text>
-      <text x="{cx}" y="{cy + 12}" text-anchor="middle" dominant-baseline="middle"
-            font-size="36" font-weight="800" fill="#f0f0f0"
-            font-family="JetBrains Mono, monospace">{int(center_pct)}</text>
-      <text x="{cx + 22}" y="{cy + 4}" text-anchor="middle" dominant-baseline="middle"
-            font-size="16" font-weight="700" fill="{COLORS_MAP.get(center_cat,'#00E054')}"
-            font-family="Inter, sans-serif">%</text>
-    </svg>"""
+    svg = f"""<div style="width:100%;max-width:200px;margin:0 auto;">
+<svg viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;">
+  <circle cx="{cx}" cy="{cy}" r="{r + 16}" fill="#080808"/>
+  {rings_svg}
+  <circle cx="{cx}" cy="{cy}" r="{r - 15}" fill="#060606"/>
+  <text x="{cx}" y="{cy - 9}" text-anchor="middle"
+        font-size="8" font-weight="600" fill="#2e2e2e"
+        font-family="Inter,sans-serif" letter-spacing="2">{label_short.upper()}</text>
+  <text x="{cx}" y="{cy + 14}" text-anchor="middle"
+        font-size="34" font-weight="800" fill="#f0f0f0"
+        font-family="'JetBrains Mono',monospace">{int(center_pct)}<tspan font-size="15" fill="{color_pct}" font-weight="700">%</tspan></text>
+</svg></div>"""
     st.markdown(svg, unsafe_allow_html=True)
 
 
@@ -972,14 +969,14 @@ def main_view():
 
     st.write("")
 
-    # ── Navegación mes — 3 botones compactos en una fila ────
+    # ── Navegación mes ───────────────────────────────────────
     st.markdown(f"""
-        <div class="month-nav">
-          <span class="month-nav-label">{st.session_state.sel_month} {st.session_state.sel_year}</span>
+        <div style="text-align:center;font-size:.98rem;font-weight:700;
+             color:#bbb;padding:8px 0 6px;letter-spacing:-.2px;">
+          {st.session_state.sel_month} {st.session_state.sel_year}
         </div>
     """, unsafe_allow_html=True)
-
-    cn1, cn2, cn3 = st.columns([2, 2, 1], vertical_alignment="center")
+    cn1, cn2, cn3 = st.columns([2, 2, 1])
     with cn1:
         if st.button("‹  Anterior", key="pm", type="secondary", use_container_width=True):
             prev_month(); st.rerun()
@@ -1352,21 +1349,24 @@ def add_view():
     # ── Monto ────────────────────────────────────────────────
     st.markdown("""
         <div style='text-align:center;font-size:.63rem;font-weight:600;color:#242424;
-             letter-spacing:3px;text-transform:uppercase;margin:20px 0 4px;'>MONTO</div>
+             letter-spacing:3px;text-transform:uppercase;margin:20px 0 10px;'>MONTO</div>
     """, unsafe_allow_html=True)
 
-    # Contenedor con fondo propio para el input
-    st.markdown("""
-        <div style='background:#0c0c0c;border:1px solid #1a1a1a;border-radius:18px;
-             padding:16px 20px 10px;margin-bottom:4px;text-align:center;'>
-    """, unsafe_allow_html=True)
-    monto = st.number_input("Monto", min_value=0.0, step=0.50, format="%.2f",
-                             label_visibility="collapsed")
-    st.markdown("</div>", unsafe_allow_html=True)
+    monto_str = st.text_input(
+        "Monto", value="0",
+        label_visibility="collapsed",
+        placeholder="0.00",
+        key="monto_input"
+    )
+    # Parse monto safely
+    try:
+        monto = max(0.0, float(monto_str.replace(",", ".")))
+    except (ValueError, AttributeError):
+        monto = 0.0
 
     st.markdown(
-        "<div style='text-align:center;color:#252525;font-size:.72rem;font-weight:600;"
-        "letter-spacing:2px;text-transform:uppercase;margin-top:6px;margin-bottom:20px;'>SOLES</div>",
+        f"<div style='text-align:center;color:#252525;font-size:.72rem;font-weight:600;"
+        f"letter-spacing:2px;text-transform:uppercase;margin-top:4px;margin-bottom:20px;'>SOLES</div>",
         unsafe_allow_html=True)
 
     # ── Categoría ────────────────────────────────────────────
