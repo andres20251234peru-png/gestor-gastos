@@ -765,12 +765,8 @@ function todayStr(){{
 }}
 
 function nav(action, extra=''){{
-  const a = document.createElement('a');
-  a.target = '_parent';
-  let url = '?action=' + encodeURIComponent(action);
-  if (extra) url += '&' + extra;
-  a.href = url;
-  a.click();
+  const baseUrl = window.parent.location.origin + window.parent.location.pathname;
+  window.parent.location.href = baseUrl + '?action=' + action + (extra ? '&' + extra : '');
 }}
 
 function donut(cats, size=160){{
@@ -1212,6 +1208,14 @@ function buildCSV(){{
   return hdr+rows;
 }}
 
+// Auto-resize iframe to content height
+function resizeIframe(){{
+  const h = document.body.scrollHeight;
+  window.parent.postMessage({{type:'streamlit:setFrameHeight', height:h}}, '*');
+}}
+const resizeObserver = new ResizeObserver(resizeIframe);
+resizeObserver.observe(document.body);
+
 // Toast auto-dismiss
 if(D.toast){{
   setTimeout(()=>nav('clear_toast'),2500);
@@ -1223,6 +1227,8 @@ if(D.view==='add'){{
   state.formData.fecha=todayStr();
 }}
 render();
+// Initial resize after render
+setTimeout(resizeIframe, 200);
 </script>
 {f'<div class="toast">{payload["toast"]}</div>' if payload.get("toast") else ""}
 </body>
