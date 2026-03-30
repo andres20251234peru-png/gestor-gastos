@@ -211,18 +211,40 @@ input[type="text"]:focus, div[data-testid="stTextInput"] input:focus {
 }
 input[type="text"]::placeholder,
 div[data-testid="stTextInput"] input::placeholder { color: #252525 !important; }
+div[data-testid="stNumberInput"] {
+  background: transparent !important; border: none !important;
+  width: 100% !important;
+}
+div[data-testid="stNumberInput"] > div {
+  background: transparent !important; border: none !important;
+  width: 100% !important; gap: 0 !important;
+}
 div[data-testid="stNumberInput"] input {
-  background: transparent !important; border: none !important; color: #fff !important;
-  font-size: clamp(3rem, 12vw, 5rem) !important; font-weight: 800 !important;
+  background: transparent !important; border: none !important;
+  color: #fff !important;
+  font-size: clamp(2.8rem, 11vw, 4.5rem) !important;
+  font-weight: 800 !important;
   font-family: 'JetBrains Mono', monospace !important;
-  text-align: center !important; padding: 8px 0 !important;
-  caret-color: #00E054 !important; letter-spacing: -3px !important; box-shadow: none !important;
+  text-align: center !important; padding: 4px 0 !important;
+  caret-color: #00E054 !important; letter-spacing: -2px !important;
+  box-shadow: none !important; width: 100% !important;
+  -webkit-appearance: none !important;
 }
 div[data-testid="stNumberInput"] input:focus {
   border: none !important; box-shadow: none !important; outline: none !important;
+  background: transparent !important;
 }
-div[data-testid="stNumberInput"] > div > div:last-child { display: none !important; }
-div[data-testid="stNumberInput"] { background: transparent !important; border: none !important; }
+/* Ocultar flechas +/- del number input */
+div[data-testid="stNumberInput"] button,
+div[data-testid="stNumberInput"] > div > div:last-child,
+div[data-testid="stNumberInput"] [data-testid="stNumberInputStepDown"],
+div[data-testid="stNumberInput"] [data-testid="stNumberInputStepUp"] {
+  display: none !important;
+}
+/* Fix fondo azul oscuro del contenedor Streamlit */
+div[data-testid="stNumberInput"] > div > div:first-child {
+  background: transparent !important; border: none !important; box-shadow: none !important;
+}
 div[role="radiogroup"] { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 div[role="radiogroup"] label {
   background: #0c0c0c !important; border: 1px solid #181818 !important;
@@ -723,20 +745,67 @@ def _fig_base(w=5, h=5, dpi=200):
 
 
 def render_donut(grp_df: pd.DataFrame, center_cat: str, center_pct: float):
-    colors = [COLORS_MAP.get(c, "#888") for c in grp_df["CATEGORÍA"]]
-    fig, ax = _fig_base(5, 5, 220)
-    ax.pie(grp_df["MONTO"], colors=colors, startangle=90, counterclock=False,
-           wedgeprops=dict(width=0.20, edgecolor="none"))
-    ax.text(0, 0.24, center_cat.upper(), ha="center", va="center",
-            fontsize=9, fontweight="800", color="#666666")
-    ax.text(-0.05, -0.05, f"{int(center_pct)}", ha="center", va="center",
-            fontsize=52, fontweight="900", color="#FFFFFF")
-    ax.text(0.35, -0.02, "%", ha="center", va="center",
-            fontsize=24, fontweight="900", color=COLORS_MAP.get(center_cat, "#fff"))
-    ax.set(aspect="equal")
-    ax.axis("off")
-    st.pyplot(fig, use_container_width=True)
-    plt.close(fig)
+    """Donut SVG puro — sin matplotlib, siempre renderiza en iPhone."""
+    import math
+    size   = 220
+    cx, cy = size / 2, size / 2
+    r_out  = 88
+    r_in   = 62
+    stroke = r_out - r_in
+
+    total_val = grp_df["MONTO"].sum()
+    slices    = []
+    angle     = -90.0  # start from top
+
+    for _, row in grp_df.iterrows():
+        cat   = row["CATEGORÍA"]
+        pct   = float(row["MONTO"]) / total_val if total_val > 0 else 0
+        sweep = pct * 360
+        color = COLORS_MAP.get(cat, "#555")
+        slices.append((angle, sweep, color, cat))
+        angle += sweep
+
+    def arc_path(start_deg, sweep_deg, r, cx, cy):
+        if sweep_deg >= 359.9:
+            sweep_deg = 359.9
+        start_r  = math.radians(start_deg)
+        end_r    = math.radians(start_deg + sweep_deg)
+        x1 = cx + r * math.cos(start_r)
+        y1 = cy + r * math.sin(start_r)
+        x2 = cx + r * math.cos(end_r)
+        y2 = cy + r * math.sin(end_r)
+        large = 1 if sweep_deg > 180 else 0
+        return f"M {x1:.2f} {y1:.2f} A {r} {r} 0 {large} 1 {x2:.2f} {y2:.2f}"
+
+    paths_svg = ""
+    for (start, sweep, color, cat) in slices:
+        if sweep < 0.5:
+            continue
+        outer = arc_path(start, sweep, r_out, cx, cy)
+        inner = arc_path(start + sweep, -sweep, r_in, cx, cy)
+        x_start_i = cx + r_in * math.cos(math.radians(start))
+        y_start_i = cy + r_in * math.sin(math.radians(start))
+        d = f"{outer} L {x_start_i:.2f} {y_start_i:.2f} {inner} Z"
+        paths_svg += f'<path d="{d}" fill="{color}" opacity="0.9"/>\n'
+
+    label_short = center_cat[:10] + "…" if len(center_cat) > 10 else center_cat
+    svg = f"""
+    <svg viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg"
+         style="width:100%;max-width:220px;display:block;margin:0 auto;">
+      <circle cx="{cx}" cy="{cy}" r="{r_out + 4}" fill="#0a0a0a"/>
+      {paths_svg}
+      <circle cx="{cx}" cy="{cy}" r="{r_in - 2}" fill="#060606"/>
+      <text x="{cx}" y="{cy - 10}" text-anchor="middle" dominant-baseline="middle"
+            font-size="9" font-weight="600" fill="#333"
+            font-family="Inter, sans-serif" letter-spacing="1.5">{label_short.upper()}</text>
+      <text x="{cx}" y="{cy + 12}" text-anchor="middle" dominant-baseline="middle"
+            font-size="36" font-weight="800" fill="#f0f0f0"
+            font-family="JetBrains Mono, monospace">{int(center_pct)}</text>
+      <text x="{cx + 22}" y="{cy + 4}" text-anchor="middle" dominant-baseline="middle"
+            font-size="16" font-weight="700" fill="{COLORS_MAP.get(center_cat,'#00E054')}"
+            font-family="Inter, sans-serif">%</text>
+    </svg>"""
+    st.markdown(svg, unsafe_allow_html=True)
 
 
 def render_history_chart(df: pd.DataFrame, view_mode="Diario"):
@@ -903,24 +972,22 @@ def main_view():
 
     st.write("")
 
-    # ── Navegación mes — HTML puro, compacta ────────────────
+    # ── Navegación mes — 3 botones compactos en una fila ────
     st.markdown(f"""
         <div class="month-nav">
           <span class="month-nav-label">{st.session_state.sel_month} {st.session_state.sel_year}</span>
         </div>
     """, unsafe_allow_html=True)
 
-    cn1, cn2, cn3, cn4 = st.columns([1, 1, 1, 1], vertical_alignment="center")
+    cn1, cn2, cn3 = st.columns([2, 2, 1], vertical_alignment="center")
     with cn1:
-        if st.button("‹ Anterior", key="pm", type="secondary", use_container_width=True):
+        if st.button("‹  Anterior", key="pm", type="secondary", use_container_width=True):
             prev_month(); st.rerun()
     with cn2:
-        if st.button("Siguiente ›", key="nm", type="secondary", use_container_width=True):
+        if st.button("Siguiente  ›", key="nm", type="secondary", use_container_width=True):
             next_month(); st.rerun()
     with cn3:
-        pass
-    with cn4:
-        if st.button("📅 Ir a mes", key="openpick", type="secondary", use_container_width=True):
+        if st.button("📅", key="openpick", type="secondary", use_container_width=True):
             st.session_state.show_picker = not st.session_state.get("show_picker", False)
             st.rerun()
 
@@ -970,12 +1037,12 @@ def main_view():
 
     st.markdown(f"""
         <div class="card">
-          <div class="card-watermark">👛</div>
           <div class="card-title">TOTAL GASTADO · {mes_sel.upper()}</div>
-          <div class="card-amount">
-            <span class="card-currency">S/</span>{total:,.2f}
+          <div class="card-amount-wrap">
+            <span class="card-currency">S/</span>
+            <span class="card-amount">{total:,.2f}</span>
           </div>
-          {"" if not presup else f'<div class="card-sub">de S/ {presup:,.0f} presupuestado · <span style=\"color:{"#00E054" if presup_pct < 80 else "#FFC700" if presup_pct < 100 else "#FF4B4B"}\">{presup_pct:.0f}%</span></div>'}
+          {"" if not presup else f'<div class="card-sub">de S/ {presup:,.0f} presupuestado · <span style="color:{"#00E054" if presup_pct < 80 else "#FFC700" if presup_pct < 100 else "#FF4B4B"}">{presup_pct:.0f}%</span></div>'}
         </div>
     """, unsafe_allow_html=True)
 
@@ -1094,19 +1161,21 @@ def main_view():
               .sort_values("MONTO", ascending=False))
     grp["PCT"] = grp["MONTO"] / total * 100
 
-    # ── Distribución — tabs compactos ───────────────────────
+    # ── Tabs distribución — compactos ───────────────────────
     st.markdown('<div class="section-title">DISTRIBUCIÓN</div>', unsafe_allow_html=True)
-    cv1, cv2, cv3 = st.columns([1, 1, 2])
+    cv1, cv2, cv3 = st.columns([1, 1, 1])
     with cv1:
-        if st.button("📊 Categorías", key="vc",
+        if st.button("Categorías", key="vc",
                      type="primary" if st.session_state.chart_mode == "Categorías" else "secondary",
                      use_container_width=True):
             st.session_state.chart_mode = "Categorías"; st.rerun()
     with cv2:
-        if st.button("📈 Histórico", key="vh",
+        if st.button("Histórico", key="vh",
                      type="primary" if st.session_state.chart_mode == "Histórico" else "secondary",
                      use_container_width=True):
             st.session_state.chart_mode = "Histórico"; st.rerun()
+    with cv3:
+        pass
 
     st.write("")
 
@@ -1270,31 +1339,50 @@ def add_view():
         return
 
     # ── Formulario ───────────────────────────────────────────
-    cb, ct, _ = st.columns([1.2, 6, 1.2], vertical_alignment="center")
+    # Header con botón volver
+    cb, ct, _ = st.columns([1, 5, 1], vertical_alignment="center")
     with cb:
-        if st.button("←", type="secondary"):
+        if st.button("←", type="secondary", use_container_width=True):
             st.session_state.view = "main"; st.rerun()
     with ct:
-        st.markdown("<div style='text-align:center;font-size:1.5rem;font-weight:900;'>Nuevo Gasto</div>",
-                    unsafe_allow_html=True)
+        st.markdown(
+            "<div style='text-align:center;font-size:1rem;font-weight:700;color:#666;letter-spacing:-.2px;'>Nuevo Gasto</div>",
+            unsafe_allow_html=True)
 
-    st.write("")
-    st.markdown("<div class='section-title' style='text-align:center;'>MONTO</div>", unsafe_allow_html=True)
-    monto = st.number_input("Monto", min_value=0.0, step=1.0, label_visibility="collapsed")
-    st.markdown(f"<div style='text-align:center;color:{THEME['muted']};margin-top:-8px;font-weight:800;'>soles</div>",
-                unsafe_allow_html=True)
+    # ── Monto ────────────────────────────────────────────────
+    st.markdown("""
+        <div style='text-align:center;font-size:.63rem;font-weight:600;color:#242424;
+             letter-spacing:3px;text-transform:uppercase;margin:20px 0 4px;'>MONTO</div>
+    """, unsafe_allow_html=True)
 
-    st.write("")
-    st.markdown("<div class='section-title' style='text-align:center;'>CATEGORÍA</div>", unsafe_allow_html=True)
-    # Nombres cortos para que no se partan en 2 líneas en móvil
+    # Contenedor con fondo propio para el input
+    st.markdown("""
+        <div style='background:#0c0c0c;border:1px solid #1a1a1a;border-radius:18px;
+             padding:16px 20px 10px;margin-bottom:4px;text-align:center;'>
+    """, unsafe_allow_html=True)
+    monto = st.number_input("Monto", min_value=0.0, step=0.50, format="%.2f",
+                             label_visibility="collapsed")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown(
+        "<div style='text-align:center;color:#252525;font-size:.72rem;font-weight:600;"
+        "letter-spacing:2px;text-transform:uppercase;margin-top:6px;margin-bottom:20px;'>SOLES</div>",
+        unsafe_allow_html=True)
+
+    # ── Categoría ────────────────────────────────────────────
+    st.markdown("""
+        <div style='text-align:center;font-size:.63rem;font-weight:600;color:#242424;
+             letter-spacing:3px;text-transform:uppercase;margin-bottom:10px;'>CATEGORÍA</div>
+    """, unsafe_allow_html=True)
+
     CAT_SHORT = {
-        "Alimentación": "🍽️ Comida", "Transporte": "🚗 Transporte",
-        "Salud": "💊 Salud", "Trabajo": "💼 Trabajo",
-        "Ocio": "🎵 Ocio", "Casa": "🏠 Casa",
-        "Inversión": "📈 Inversión", "Pareja": "❤️ Pareja",
-        "Estudios": "📚 Estudios", "Viaje": "✈️ Viaje",
-        "Frutas": "🍎 Frutas", "Golosinas": "🍬 Dulces",
-        "Compras Generales": "🛒 Compras", "Otros": "📦 Otros",
+        "Alimentación": "🍽️ Comida",   "Transporte": "🚗 Transporte",
+        "Salud":        "💊 Salud",      "Trabajo":    "💼 Trabajo",
+        "Ocio":         "🎵 Ocio",       "Casa":       "🏠 Casa",
+        "Inversión":    "📈 Inversión",  "Pareja":     "❤️ Pareja",
+        "Estudios":     "📚 Estudios",   "Viaje":      "✈️ Viaje",
+        "Frutas":       "🍎 Frutas",     "Golosinas":  "🍬 Dulces",
+        "Compras Generales": "🛒 Compras", "Otros":    "📦 Otros",
     }
     cats_display = list(CAT_SHORT.values())
     cats_keys    = list(CAT_SHORT.keys())
@@ -1303,12 +1391,18 @@ def add_view():
     if cat_clean not in VALID_CATS:
         cat_clean = "Otros"
 
-    st.write("")
-    st.markdown("<div class='section-title' style='text-align:center;'>FECHA</div>", unsafe_allow_html=True)
+    # ── Fecha ────────────────────────────────────────────────
+    st.markdown("""
+        <div style='text-align:center;font-size:.63rem;font-weight:600;color:#242424;
+             letter-spacing:3px;text-transform:uppercase;margin:20px 0 8px;'>FECHA</div>
+    """, unsafe_allow_html=True)
     fecha = st.date_input("Fecha", value=now_peru().date(), label_visibility="collapsed")
 
-    st.write("")
-    st.markdown("<div class='section-title' style='text-align:center;'>NOTA</div>", unsafe_allow_html=True)
+    # ── Nota ─────────────────────────────────────────────────
+    st.markdown("""
+        <div style='text-align:center;font-size:.63rem;font-weight:600;color:#242424;
+             letter-spacing:3px;text-transform:uppercase;margin:16px 0 8px;'>NOTA</div>
+    """, unsafe_allow_html=True)
     nota = st.text_input("Nota", placeholder="Descripción (opcional)…", label_visibility="collapsed")
 
     st.write("")
