@@ -144,106 +144,178 @@ def inject_css():
     p = THEME["primary"]
     st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,700;0,900;1,400&family=JetBrains+Mono:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,700;9..40,900&family=JetBrains+Mono:wght@600;700&display=swap');
 
+/* ══════════════════════════════════════════
+   BASE
+══════════════════════════════════════════ */
 html, body, [class*="css"] {{
   font-family: 'DM Sans', sans-serif !important;
   color: {THEME['text']} !important;
+  -webkit-font-smoothing: antialiased !important;
 }}
-.stApp {{ background: {THEME['bg']} !important; }}
+html, body {{
+  background: #050505 !important;
+  overflow-x: hidden !important;
+}}
+.stApp {{ background: #050505 !important; }}
 .block-container {{
-  max-width: 860px !important;
-  padding-top: 20px !important;
-  padding-bottom: 60px !important;
+  max-width: 820px !important;
+  padding-top: max(24px, env(safe-area-inset-top)) !important;
+  padding-bottom: max(80px, env(safe-area-inset-bottom)) !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
 }}
-header, footer {{ visibility: hidden; }}
+#MainMenu, header, footer,
+div[data-testid="stToolbar"],
+div[data-testid="stDecoration"],
+div[data-testid="stStatusWidget"] {{
+  display: none !important; visibility: hidden !important; height: 0 !important;
+}}
 
-/* ── Inputs ── */
+/* ══════════════════════════════════════════
+   TIPOGRAFÍA — escala clara
+══════════════════════════════════════════ */
+.t-hero  {{ font-size: clamp(2.4rem, 9vw, 3.6rem); font-weight: 900; line-height: 1; letter-spacing: -1px; font-family: 'JetBrains Mono', monospace; color: #fff; }}
+.t-title {{ font-size: 1.6rem; font-weight: 900; line-height: 1.1; color: #fff; }}
+.t-label {{ font-size: .72rem; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #4a4a4a; }}
+.t-muted {{ font-size: .85rem; font-weight: 600; color: #555; }}
+
+/* ══════════════════════════════════════════
+   BOTONES
+══════════════════════════════════════════ */
+button {{ border-radius: 16px !important; font-family: 'DM Sans', sans-serif !important; }}
+button[kind="primary"] {{
+  background: {p} !important; color: #000 !important;
+  border: none !important; font-weight: 900 !important;
+  font-size: .95rem !important;
+  height: 52px !important;
+  letter-spacing: .3px !important;
+  transition: transform .1s ease, box-shadow .1s ease, opacity .1s ease !important;
+}}
+button[kind="primary"]:hover {{
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 28px rgba(0,224,84,0.35) !important;
+}}
+button[kind="primary"]:active {{
+  transform: translateY(0) scale(0.98) !important;
+  opacity: .85 !important;
+}}
+button[kind="secondary"] {{
+  background: #141414 !important;
+  border: 1px solid #252525 !important;
+  color: #ccc !important;
+  font-weight: 700 !important;
+  height: 52px !important;
+  transition: border-color .15s ease, color .15s ease !important;
+}}
+button[kind="secondary"]:hover {{
+  border-color: #3a3a3a !important;
+  color: #fff !important;
+}}
+
+/* ── Botón nuevo gasto: ancho limitado en desktop ── */
+@media (min-width: 600px) {{
+  div[data-testid="stButton"]:has(button[kind="primary"]) {{
+    max-width: 240px !important;
+  }}
+}}
+
+/* ══════════════════════════════════════════
+   INPUTS
+══════════════════════════════════════════ */
 div[data-baseweb="select"] > div {{
-  background: {THEME['input']} !important;
-  border: 1px solid {THEME['stroke']} !important;
+  background: #141414 !important;
+  border: 1px solid #252525 !important;
   border-radius: 999px !important;
 }}
 div[data-baseweb="menu"], div[data-baseweb="popover"],
 ul[data-testid="stSelectboxVirtualDropdown"] {{
-  background-color: #121212 !important;
-  border: 1px solid {THEME['stroke']} !important;
+  background-color: #141414 !important;
+  border: 1px solid #252525 !important;
 }}
-li[role="option"] {{ color: white !important; }}
-li[role="option"][aria-selected="true"] {{
-  background: #2a2a2a !important; color: {p} !important;
-}}
+li[role="option"] {{ color: #ccc !important; }}
+li[role="option"][aria-selected="true"] {{ background: #1e1e1e !important; color: {p} !important; }}
+
+/* Input monto — el protagonista del formulario */
 div[data-testid="stNumberInput"] input {{
-  background: #0f1713 !important;
-  border: 1px solid #1f2a23 !important;
-  border-radius: 22px !important;
+  background: #0a1a11 !important;
+  border: 1.5px solid #1a3323 !important;
+  border-radius: 20px !important;
   color: {p} !important;
-  font-size: 3.2rem !important;
-  font-weight: 900 !important;
+  font-size: clamp(2.4rem, 8vw, 3.4rem) !important;
+  font-weight: 700 !important;
   font-family: 'JetBrains Mono', monospace !important;
   text-align: center !important;
-  padding: 22px 0 !important;
+  padding: 24px 0 !important;
   caret-color: {p} !important;
+  transition: border-color .2s ease, box-shadow .2s ease !important;
 }}
+div[data-testid="stNumberInput"] input:focus {{
+  border-color: {p} !important;
+  box-shadow: 0 0 0 3px rgba(0,224,84,0.12) !important;
+}}
+/* Ocultar flechas del number input */
+div[data-testid="stNumberInput"] button {{
+  background: #1a1a1a !important;
+  border: 1px solid #2a2a2a !important;
+  border-radius: 12px !important;
+  color: #aaa !important;
+  height: 38px !important;
+}}
+
 input[type="text"], div[data-testid="stTextInput"] input {{
-  background: {THEME['input']} !important;
-  border: 1px solid {THEME['stroke']} !important;
+  background: #141414 !important;
+  border: 1px solid #252525 !important;
   border-radius: 14px !important;
-  color: {THEME['text']} !important;
-  padding: 10px 16px !important;
+  color: #fff !important;
+  padding: 13px 18px !important;
+  font-size: .95rem !important;
+  transition: border-color .15s ease, box-shadow .15s ease !important;
 }}
 input[type="text"]:focus, div[data-testid="stTextInput"] input:focus {{
   border-color: {p} !important;
-  box-shadow: 0 0 0 2px rgba(0,224,84,0.15) !important;
+  box-shadow: 0 0 0 3px rgba(0,224,84,0.10) !important;
   outline: none !important;
 }}
 
-/* ── Botones ── */
-button {{ border-radius: 18px !important; }}
-button[kind="primary"] {{
-  background: {p} !important; color: #000 !important;
-  border: none !important; font-weight: 900 !important;
-  font-family: 'DM Sans', sans-serif !important;
-  height: 46px !important;
-  transition: transform .12s ease, box-shadow .12s ease !important;
-}}
-button[kind="primary"]:hover {{
-  transform: translateY(-1px) !important;
-  box-shadow: 0 6px 20px rgba(0,224,84,0.3) !important;
-}}
-button[kind="secondary"] {{
-  background: #121212 !important;
-  border: 1px solid #2a2a2a !important;
-  color: {THEME['text']} !important;
-  font-family: 'DM Sans', sans-serif !important;
-  height: 46px !important;
-  transition: border-color .15s ease !important;
-}}
-button[kind="secondary"]:hover {{ border-color: {p} !important; }}
-
-/* ── Chips radio ── */
+/* ══════════════════════════════════════════
+   CHIPS CATEGORÍA (radio)
+══════════════════════════════════════════ */
 div[role="radiogroup"] {{
-  display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
 }}
 div[role="radiogroup"] label {{
-  background: {THEME['input']} !important;
-  border: 1px solid {THEME['stroke']} !important;
-  border-radius: 999px !important; padding: 10px 16px !important;
-  cursor: pointer; transition: all .15s ease;
+  background: #141414 !important;
+  border: 1.5px solid #222 !important;
+  border-radius: 999px !important;
+  padding: 10px 18px !important;
+  cursor: pointer;
+  transition: all .15s ease;
+  min-height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
 }}
 div[role="radiogroup"] label p {{
-  color: #cfcfcf !important; font-weight: 800 !important;
-  font-size: .9rem !important; margin: 0 !important;
+  color: #aaa !important; font-weight: 700 !important;
+  font-size: .88rem !important; margin: 0 !important;
+  transition: color .15s ease;
+}}
+div[role="radiogroup"] label:hover {{
+  border-color: #333 !important;
+}}
+div[role="radiogroup"] label:hover p {{
+  color: #fff !important;
 }}
 div[role="radiogroup"] label:has(input:checked) {{
   background: {p} !important; border-color: {p} !important;
-  box-shadow: 0 8px 18px rgba(0,224,84,0.25) !important;
+  box-shadow: 0 4px 20px rgba(0,224,84,0.3) !important;
+  transform: scale(1.03) !important;
 }}
 div[role="radiogroup"] label:has(input:checked) p {{
   color: #000 !important; font-weight: 900 !important;
 }}
 div[role="radiogroup"] label > div:first-child {{ display: none; }}
-/* Mobile: 2 columnas iguales */
 @media (max-width: 599px) {{
   div[role="radiogroup"] {{
     display: grid !important;
@@ -253,324 +325,339 @@ div[role="radiogroup"] label > div:first-child {{ display: none; }}
   div[role="radiogroup"] label {{
     justify-content: center !important;
     text-align: center !important;
+    padding: 14px 10px !important;
+    min-height: 52px !important;
   }}
+  div[role="radiogroup"] label p {{ font-size: .92rem !important; }}
 }}
 
-/* ── Card total ── */
+/* ══════════════════════════════════════════
+   CARD HERO (total gastado)
+══════════════════════════════════════════ */
 .card {{
-  background: linear-gradient(180deg,#192b23 0%,#0f1613 100%) !important;
-  border: 1px solid #1f332a !important; border-radius: 28px !important;
-  padding: 28px 22px !important;
-  box-shadow: 0 18px 36px rgba(0,0,0,0.55) !important;
-  position: relative; overflow: hidden; margin-top: 10px;
+  background: linear-gradient(145deg, #0f2018 0%, #091510 60%, #050d0a 100%) !important;
+  border: 1px solid #1a3326 !important;
+  border-radius: 28px !important;
+  padding: 32px 24px 28px !important;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.7), inset 0 1px 0 rgba(0,224,84,0.06) !important;
+  position: relative; overflow: hidden; margin-top: 8px;
   display: flex !important; flex-direction: column !important;
   align-items: center !important; justify-content: center !important;
 }}
+/* Luz ambiental sutil arriba */
+.card::before {{
+  content: '';
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 60%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,224,84,0.25), transparent);
+}}
 .card-title {{
-  color: #8fa397 !important; font-size: .78rem !important;
-  letter-spacing: 2.4px !important; text-transform: uppercase !important;
-  margin-bottom: 10px !important; text-align: center !important; font-weight: 800 !important;
+  color: #4a7a5e !important; font-size: .72rem !important;
+  letter-spacing: 3px !important; text-transform: uppercase !important;
+  margin-bottom: 12px !important; text-align: center !important; font-weight: 700 !important;
 }}
 .card-amount {{
-  font-size: clamp(2rem, 8vw, 3.2rem) !important;
-  font-weight: 900 !important; margin: 0 !important;
-  text-align: center !important; color: #FFFFFF !important; line-height: 1.1 !important;
+  font-size: clamp(2.6rem, 10vw, 4rem) !important;
+  font-weight: 700 !important; margin: 0 !important;
+  text-align: center !important; color: #FFFFFF !important; line-height: 1 !important;
   font-family: 'JetBrains Mono', monospace !important;
-  word-break: keep-all !important; white-space: nowrap !important;
+  letter-spacing: -2px !important;
+}}
+.card-currency {{
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  font-weight: 600; color: #4a7a5e;
+  font-family: 'JetBrains Mono', monospace;
+  margin-right: 4px; letter-spacing: 0;
 }}
 .card-sub {{
-  color: #8fa397 !important; font-size: .82rem !important;
-  font-weight: 700 !important; margin-top: 6px !important; text-align: center !important;
+  color: #3d6b52 !important; font-size: .8rem !important;
+  font-weight: 700 !important; margin-top: 10px !important;
+  text-align: center !important; letter-spacing: .5px !important;
 }}
 .card-watermark {{
-  position: absolute; right: -22px; bottom: -42px; opacity: .05;
-  font-size: 9.6rem; color: white; transform: rotate(-15deg); pointer-events: none;
+  position: absolute; right: -18px; bottom: -36px; opacity: .04;
+  font-size: 10rem; transform: rotate(-12deg); pointer-events: none;
+  filter: grayscale(1);
 }}
 
-/* ── Flash de éxito ── */
-@keyframes successFlash {{
-  0%   {{ opacity: 0; transform: scale(0.97); }}
-  15%  {{ opacity: 1; transform: scale(1.01); }}
-  80%  {{ opacity: 1; transform: scale(1); }}
-  100% {{ opacity: 0; }}
+/* ══════════════════════════════════════════
+   BARRA DE PRESUPUESTO
+══════════════════════════════════════════ */
+.budget-wrap {{ margin-top: 14px; }}
+.budget-bar-bg {{
+  width: 100%; height: 6px; background: #1a1a1a;
+  border-radius: 99px; overflow: hidden;
 }}
-.success-flash {{
-  position: fixed; inset: 0;
-  background: rgba(0,224,84,0.07);
-  border: 2px solid rgba(0,224,84,0.25);
-  border-radius: 16px; z-index: 9999; pointer-events: none;
-  animation: successFlash 1.4s ease forwards;
+.budget-bar-fill {{
+  height: 100%; border-radius: 99px;
+  transition: width .6s cubic-bezier(.4,0,.2,1);
 }}
-.success-banner {{
-  background: linear-gradient(90deg,#0a2018,#0f2a1c);
-  border: 1px solid #1f4a30; border-radius: 18px;
-  padding: 16px 20px; display: flex; align-items: center; gap: 14px;
-  margin-bottom: 16px;
-  animation: successFlash 2.5s ease forwards;
+.budget-meta {{
+  display: flex; justify-content: space-between; margin-top: 6px;
 }}
-.success-icon  {{ font-size: 1.8rem; }}
-.success-title {{ font-weight: 900; color: {p}; font-size: 1rem; }}
-.success-sub   {{ font-size: .82rem; color: #8fa397; font-weight: 700; }}
+.budget-spent  {{ color: #888; font-size: .78rem; font-weight: 700; }}
+.budget-remain {{ font-size: .78rem; font-weight: 800; }}
 
-/* ── Stat pills ── */
+/* ══════════════════════════════════════════
+   ALERTAS PRESUPUESTO
+══════════════════════════════════════════ */
+.budget-alert {{
+  border-radius: 14px; padding: 13px 16px; margin-top: 12px;
+  font-weight: 800; font-size: .86rem;
+  display: flex; align-items: center; gap: 10px;
+  animation: fadeSlideIn .3s ease forwards;
+}}
+.budget-alert.warn {{
+  background: rgba(255,199,0,0.07); border: 1px solid rgba(255,199,0,0.2); color: #e6b800;
+}}
+.budget-alert.danger {{
+  background: rgba(255,75,75,0.07); border: 1px solid rgba(255,75,75,0.25); color: #e84040;
+}}
+
+/* ══════════════════════════════════════════
+   STAT PILLS
+══════════════════════════════════════════ */
 .stat-row {{
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 12px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;
 }}
-.stat-pill {{
-  background: #111; border: 1px solid #1f1f1f;
-  border-radius: 18px; padding: 12px 14px;
-  display: flex; flex-direction: column; gap: 3px;
-}}
-.stat-label {{ color: #555; font-size: .72rem; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }}
-.stat-value {{ color: #fff; font-size: 1.05rem; font-weight: 900; font-family: 'JetBrains Mono', monospace; }}
-.stat-value.green {{ color: {p} !important; }}
 @media (min-width: 600px) {{
   .stat-row {{ grid-template-columns: repeat(4, 1fr); }}
 }}
-
-/* ── Badge ── */
-.badge {{
-  display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px;
-  border-radius: 999px; border: 1px solid #1f332a; background: #0b1410;
-  color: #9fc4b0 !important; font-weight: 800; font-size: .78rem; letter-spacing: .6px;
-}}
-
-/* ── Nav mes ── */
-.month-nav-wrap {{
-  display: flex; align-items: center; justify-content: space-between;
-  background: #111; border: 1px solid #1f1f1f; border-radius: 18px;
-  padding: 6px 10px; margin: 8px 0;
-}}
-.month-label {{
-  font-size: 1.05rem; font-weight: 900; color: #fff; text-align: center;
-}}
-/* Picker de meses en grid 3x4 */
-.month-grid {{
-  display: grid !important;
-  grid-template-columns: repeat(3, 1fr) !important;
-  gap: 8px !important;
-  padding: 8px 0 !important;
-}}
-
-/* ── Section title ── */
-.section-title {{
-  color: #555 !important; font-weight: 900; font-size: .82rem;
-  letter-spacing: 1.8px; margin-top: 20px; margin-bottom: 10px;
-}}
-
-/* ── Expander ── */
-div[data-testid="stExpander"] {{
-  border: 1px solid #1f1f1f !important; border-radius: 18px !important;
-  background: #111211 !important; overflow: hidden;
-}}
-div[data-testid="stExpander"] details {{ background: #111211 !important; }}
-div[data-testid="stExpander"] summary {{
-  padding: 14px 16px !important; background-color: #111211 !important;
-}}
-div[data-testid="stExpander"] summary:hover {{ background-color: #181918 !important; }}
-div[data-testid="stExpander"] summary p {{ font-weight: 900 !important; }}
-
-/* ── Movimientos ── */
-.mov-item {{
-  background: #111; border: 1px solid #1f1f1f; border-radius: 18px;
-  padding: 14px 16px; margin-bottom: 8px;
-  display: flex; justify-content: space-between; align-items: center;
+.stat-pill {{
+  background: #0d0d0d; border: 1px solid #1a1a1a;
+  border-radius: 18px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 5px;
   transition: border-color .15s ease;
 }}
-.mov-item:hover {{ border-color: #2a2a2a; }}
-.mov-left {{ display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }}
-.mov-cat  {{ font-weight: 900; }}
-.mov-desc {{
-  color: #8a8a8a; font-size: .86rem;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 480px;
+.stat-pill:hover {{ border-color: #2a2a2a; }}
+.stat-label {{
+  color: #3a3a3a; font-size: .68rem; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
 }}
-.mov-amt  {{ font-weight: 900; color: {p}; white-space: nowrap; font-family: 'JetBrains Mono', monospace; }}
+.stat-value {{
+  color: #e0e0e0; font-size: 1.1rem; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace; letter-spacing: -.5px;
+}}
+.stat-value.green {{ color: {p} !important; }}
+.stat-value.streak {{
+  font-size: 1.3rem; font-weight: 900; color: {p};
+}}
 
-/* ── Legend ── */
+/* ══════════════════════════════════════════
+   BADGE FECHA
+══════════════════════════════════════════ */
+.badge {{
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px;
+  border-radius: 999px; border: 1px solid #1a2e22; background: #080e0b;
+  color: #3d6b52 !important; font-weight: 700; font-size: .72rem; letter-spacing: 1px;
+}}
+.badge-dot {{ width: 6px; height: 6px; border-radius: 50%; background: {p}; }}
+
+/* ══════════════════════════════════════════
+   GREETING
+══════════════════════════════════════════ */
+.greeting {{
+  font-size: clamp(1.8rem, 6vw, 2.4rem);
+  font-weight: 900; line-height: 1.1;
+  color: #fff; margin: 10px 0 16px;
+  letter-spacing: -.5px;
+}}
+
+/* ══════════════════════════════════════════
+   NAV MES
+══════════════════════════════════════════ */
+.month-label {{
+  font-size: 1rem; font-weight: 700; color: #fff; text-align: center;
+}}
+
+/* ══════════════════════════════════════════
+   SECTION TITLE
+══════════════════════════════════════════ */
+.section-title {{
+  color: #2e2e2e !important; font-weight: 700; font-size: .7rem;
+  letter-spacing: 2.5px; margin-top: 24px; margin-bottom: 10px;
+  text-transform: uppercase;
+}}
+
+/* ══════════════════════════════════════════
+   EXPANDER (categorías)
+══════════════════════════════════════════ */
+div[data-testid="stExpander"] {{
+  border: 1px solid #181818 !important; border-radius: 20px !important;
+  background: #0d0d0d !important; overflow: hidden;
+  transition: border-color .15s ease !important;
+}}
+div[data-testid="stExpander"]:hover {{
+  border-color: #252525 !important;
+}}
+div[data-testid="stExpander"] details {{ background: #0d0d0d !important; }}
+div[data-testid="stExpander"] summary {{
+  padding: 18px 20px !important; background-color: #0d0d0d !important;
+  min-height: 56px !important;
+}}
+div[data-testid="stExpander"] summary:hover {{ background-color: #111 !important; }}
+div[data-testid="stExpander"] summary p {{
+  font-weight: 800 !important; font-size: 1rem !important;
+}}
+/* Chevron más grande y fácil de tocar */
+div[data-testid="stExpander"] summary svg {{
+  width: 20px !important; height: 20px !important;
+}}
+
+/* ══════════════════════════════════════════
+   MOVIMIENTOS
+══════════════════════════════════════════ */
+.mov-item {{
+  background: #0d0d0d; border: 1px solid #181818;
+  border-radius: 18px; padding: 16px 18px; margin-bottom: 6px;
+  display: flex; justify-content: space-between; align-items: center;
+  transition: border-color .15s ease, background .15s ease;
+}}
+.mov-item:hover {{ border-color: #252525; background: #101010; }}
+.mov-left {{ display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }}
+.mov-cat  {{ font-weight: 800; font-size: .95rem; color: #e0e0e0; }}
+.mov-desc {{
+  color: #3a3a3a; font-size: .82rem; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px;
+}}
+.mov-right {{ display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }}
+.mov-amt  {{ font-weight: 700; color: {p}; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: .95rem; }}
+.mov-date {{ font-size: .72rem; color: #2e2e2e; font-weight: 600; }}
+
+/* ══════════════════════════════════════════
+   LEYENDA (donut)
+══════════════════════════════════════════ */
 .legend-row {{
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 0; border-bottom: 1px solid #1f1f1f;
+  padding: 10px 0; border-bottom: 1px solid #141414;
 }}
 .legend-row:last-child {{ border-bottom: none; }}
 .legend-left {{ display: flex; align-items: center; gap: 10px; }}
-.legend-dot  {{ width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }}
-.legend-name {{ color: #e0e0e0; font-weight: 700; font-size: .9rem; }}
-.legend-pct  {{ color: #888; font-weight: 800; font-size: .9rem; }}
-
-/* ── Rich card ── */
-.rich-card    {{ padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #1f1f1f; }}
-.rich-header  {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
-.rich-left    {{ display: flex; flex-direction: column; gap: 2px; }}
-.rich-right   {{ display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }}
-.rich-cat     {{ font-size: 1.1rem; font-weight: 900; color: #fff; }}
-.rich-sub     {{ font-size: .75rem; font-weight: 700; color: #666; text-transform: uppercase; letter-spacing: .5px; }}
-.rich-amt     {{ font-size: 1.2rem; font-weight: 900; color: #fff; font-family: 'JetBrains Mono', monospace; }}
-.rich-pct     {{ font-size: .9rem; font-weight: 800; }}
-.rich-bar-bg  {{ width: 100%; height: 6px; background: #2b2b2b; border-radius: 99px; margin-top: 6px; overflow: hidden; }}
-.rich-bar-fill {{ height: 100%; border-radius: 99px; }}
-
-/* ── Budget ── */
-.budget-bar-bg   {{ width: 100%; height: 8px; background: #1f1f1f; border-radius: 99px; overflow: hidden; margin-top: 10px; }}
-.budget-bar-fill {{ height: 100%; border-radius: 99px; transition: width .4s ease; }}
-.budget-meta     {{ display: flex; justify-content: space-between; margin-top: 4px; }}
-.budget-spent    {{ color: #fff; font-size: .8rem; font-weight: 800; }}
-.budget-remain   {{ font-size: .8rem; font-weight: 800; }}
-
-/* ── Skeleton ── */
-@keyframes shimmer {{
-  0%   {{ background-position: -600px 0; }}
-  100% {{ background-position:  600px 0; }}
+.legend-dot  {{
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
 }}
-.skeleton {{
-  background: linear-gradient(90deg,#1a1a1a 25%,#242424 50%,#1a1a1a 75%);
-  background-size: 600px 100%;
-  animation: shimmer 1.4s infinite linear;
-  border-radius: 14px;
-}}
-.skeleton-card {{ height: 140px; margin-bottom: 12px; border-radius: 28px; }}
-.skeleton-pill {{ height: 72px; flex: 1; border-radius: 18px; }}
-.skeleton-row  {{ height: 64px; margin-bottom: 8px; border-radius: 18px; }}
+.legend-name {{ color: #ccc; font-weight: 700; font-size: .88rem; }}
+.legend-pct  {{ color: #444; font-weight: 700; font-size: .88rem; font-family: 'JetBrains Mono', monospace; }}
 
-/* ── Preview ── */
+/* ══════════════════════════════════════════
+   RICH CARD (detalle categoría)
+══════════════════════════════════════════ */
+.rich-card    {{ padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid #141414; }}
+.rich-header  {{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }}
+.rich-left    {{ display: flex; flex-direction: column; gap: 3px; }}
+.rich-right   {{ display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }}
+.rich-cat     {{ font-size: 1rem; font-weight: 800; color: #e0e0e0; }}
+.rich-sub     {{ font-size: .72rem; font-weight: 700; color: #333; text-transform: uppercase; letter-spacing: 1px; }}
+.rich-amt     {{ font-size: 1.15rem; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }}
+.rich-pct     {{ font-size: .82rem; font-weight: 800; }}
+.rich-bar-bg  {{ width: 100%; height: 4px; background: #1a1a1a; border-radius: 99px; margin-top: 8px; overflow: hidden; }}
+.rich-bar-fill {{ height: 100%; border-radius: 99px; opacity: .85; }}
+
+/* ══════════════════════════════════════════
+   PREVIEW CARD (confirmar gasto)
+══════════════════════════════════════════ */
 .preview-card {{
-  background: #0f1f19; border: 1px solid #1f4a30;
-  border-radius: 22px; padding: 22px 20px; margin-bottom: 16px;
+  background: #0a1a11; border: 1px solid #1a3323;
+  border-radius: 24px; padding: 24px 22px; margin-bottom: 20px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
 }}
 .preview-row {{
   display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 0; border-bottom: 1px solid #162a1e;
+  padding: 12px 0; border-bottom: 1px solid #111f17;
 }}
 .preview-row:last-child {{ border-bottom: none; }}
-.preview-label  {{ color: #8fa397; font-size: .82rem; font-weight: 800; text-transform: uppercase; letter-spacing: .8px; }}
-.preview-value  {{ color: #fff; font-weight: 900; font-size: .95rem; }}
-.preview-amount {{ color: {p}; font-weight: 900; font-size: 1.6rem; font-family: 'JetBrains Mono', monospace; }}
+.preview-label  {{ color: #3d6b52; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; }}
+.preview-value  {{ color: #d0d0d0; font-weight: 800; font-size: .95rem; }}
+.preview-amount {{ color: {p}; font-weight: 700; font-size: 1.8rem; font-family: 'JetBrains Mono', monospace; letter-spacing: -1px; }}
 
-/* ── Sort bar ── */
-.sort-label {{ color: #555; font-size: .78rem; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; padding-top: 10px; }}
-
-/* ── Empty state ── */
-.empty-state {{
-  text-align: center; padding: 48px 24px;
+/* ══════════════════════════════════════════
+   SUCCESS BANNER
+══════════════════════════════════════════ */
+@keyframes fadeSlideIn {{
+  from {{ opacity: 0; transform: translateY(-8px); }}
+  to   {{ opacity: 1; transform: translateY(0); }}
 }}
-.empty-icon  {{ font-size: 3rem; margin-bottom: 12px; }}
-.empty-title {{ font-size: 1.2rem; font-weight: 900; color: #666; margin-bottom: 6px; }}
-.empty-sub   {{ font-size: .9rem; color: #444; }}
+@keyframes successPulse {{
+  0%   {{ box-shadow: 0 0 0 0 rgba(0,224,84,0.4); }}
+  70%  {{ box-shadow: 0 0 0 12px rgba(0,224,84,0); }}
+  100% {{ box-shadow: 0 0 0 0 rgba(0,224,84,0); }}
+}}
+.success-flash {{
+  position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 0%, rgba(0,224,84,0.06) 0%, transparent 70%);
+  animation: fadeSlideIn .3s ease forwards;
+}}
+.success-banner {{
+  background: #0a1a11; border: 1px solid #1a3323;
+  border-radius: 20px; padding: 18px 20px;
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 16px; animation: fadeSlideIn .4s ease forwards;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}}
+.success-icon  {{ font-size: 2rem; animation: successPulse 1s ease; }}
+.success-title {{ font-weight: 900; color: {p}; font-size: 1rem; margin-bottom: 2px; }}
+.success-sub   {{ font-size: .82rem; color: #3d6b52; font-weight: 700; }}
 
-/* ── Toast ── */
+/* ══════════════════════════════════════════
+   SKELETON
+══════════════════════════════════════════ */
+@keyframes shimmer {{
+  0%   {{ background-position: -700px 0; }}
+  100% {{ background-position:  700px 0; }}
+}}
+.skeleton {{
+  background: linear-gradient(90deg, #111 25%, #1a1a1a 50%, #111 75%);
+  background-size: 700px 100%;
+  animation: shimmer 1.6s infinite linear;
+  border-radius: 14px;
+}}
+.skeleton-card {{ height: 160px; margin-bottom: 10px; border-radius: 28px; }}
+.skeleton-pill {{ height: 76px; flex: 1; border-radius: 18px; }}
+.skeleton-row  {{ height: 68px; margin-bottom: 6px; border-radius: 18px; }}
+
+/* ══════════════════════════════════════════
+   SORT BAR
+══════════════════════════════════════════ */
+.sort-label {{
+  color: #2e2e2e; font-size: .7rem; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase; padding-top: 12px;
+}}
+
+/* ══════════════════════════════════════════
+   EMPTY STATE
+══════════════════════════════════════════ */
+.empty-state  {{ text-align: center; padding: 60px 24px; }}
+.empty-icon   {{ font-size: 3.5rem; margin-bottom: 16px; opacity: .6; }}
+.empty-title  {{ font-size: 1.1rem; font-weight: 800; color: #2e2e2e; margin-bottom: 6px; }}
+.empty-sub    {{ font-size: .88rem; color: #222; font-weight: 600; }}
+
+/* ══════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════ */
 div[data-testid="stToast"] {{
-  background-color: #111211 !important; border: 1px solid #1f1f1f !important;
-  color: #fff !important; border-radius: 12px !important;
+  background-color: #111 !important; border: 1px solid #222 !important;
+  color: #fff !important; border-radius: 14px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5) !important;
 }}
 div[data-testid="stToast"] p, div[data-testid="stToast"] svg {{
   color: #fff !important; fill: #fff !important;
 }}
 
-/* ── FAB: botón flotante móvil ── */
-.fab-container {{
-  display: none;
-}}
-@media (max-width: 599px) {{
-  .fab-container {{
-    display: block;
-    position: fixed;
-    bottom: max(24px, env(safe-area-inset-bottom));
-    right: 20px;
-    z-index: 9999;
-  }}
-  .fab-btn {{
-    background: {p};
-    color: #000;
-    font-weight: 900;
-    font-size: 1.1rem;
-    border: none;
-    border-radius: 999px;
-    padding: 16px 24px;
-    box-shadow: 0 8px 24px rgba(0,224,84,0.45);
-    cursor: pointer;
-    white-space: nowrap;
-  }}
-}}
-
-/* ── Chips de categoría táctiles (iPhone) ── */
-@media (max-width: 599px) {{
-  div[role="radiogroup"] label {{
-    padding: 14px 10px !important;
-    font-size: 1rem !important;
-    min-height: 52px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-  }}
-  div[role="radiogroup"] label p {{
-    font-size: .95rem !important;
-  }}
-}}
-
-/* ── Alerta presupuesto ── */
-.budget-alert {{
-  border-radius: 14px;
-  padding: 12px 16px;
-  margin-top: 10px;
-  font-weight: 800;
-  font-size: .88rem;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}}
-.budget-alert.warn {{
-  background: rgba(255,199,0,0.1);
-  border: 1px solid rgba(255,199,0,0.3);
-  color: #FFC700;
-}}
-.budget-alert.danger {{
-  background: rgba(255,75,75,0.1);
-  border: 1px solid rgba(255,75,75,0.35);
-  color: #FF4B4B;
-}}
-
-/* ── Input numérico más grande en móvil ── */
-@media (max-width: 599px) {{
-  div[data-testid="stNumberInput"] input {{
-    font-size: 2.6rem !important;
-    padding: 18px 0 !important;
-  }}
-}}
-
-.block-container {{
-  padding-bottom: max(60px, env(safe-area-inset-bottom)) !important;
-  padding-top: max(20px, env(safe-area-inset-top)) !important;
-}}
-
-/* Ocultar completamente la toolbar de Streamlit en modo app */
-#MainMenu, header, footer,
-div[data-testid="stToolbar"],
-div[data-testid="stDecoration"],
-div[data-testid="stStatusWidget"] {{
-  display: none !important;
-  visibility: hidden !important;
-  height: 0 !important;
-}}
-
-/* Fondo negro total sin bordes blancos */
-html, body {{
-  background: #000000 !important;
-  overflow-x: hidden !important;
-}}
-
-/* Fuente más grande en mobile para mejor legibilidad */
+/* ══════════════════════════════════════════
+   MOBILE FINAL TWEAKS
+══════════════════════════════════════════ */
 @media (max-width: 599px) {{
   .block-container {{
-    padding-left: 12px !important;
-    padding-right: 12px !important;
+    padding-left: 14px !important;
+    padding-right: 14px !important;
   }}
-  .badge {{
-    font-size: .7rem !important;
-  }}
-  .section-title {{
-    font-size: .75rem !important;
+  .greeting {{ margin-bottom: 12px !important; }}
+  .card {{ padding: 26px 20px 22px !important; border-radius: 24px !important; }}
+  .card-amount {{ letter-spacing: -1.5px !important; }}
+  .mov-item {{ padding: 15px 14px !important; border-radius: 16px !important; }}
+  div[data-testid="stNumberInput"] input {{
+    font-size: 2.8rem !important; padding: 20px 0 !important;
   }}
 }}
 </style>
@@ -974,7 +1061,9 @@ def render_mov_item(desc: str, subtitle: str, amt: float, gasto_id: str, key_pre
                 <div class="mov-cat">{desc}</div>
                 <div class="mov-desc">{subtitle}</div>
               </div>
-              <div class="mov-amt">S/ {amt:,.2f}</div>
+              <div class="mov-right">
+                <div class="mov-amt">S/ {amt:,.2f}</div>
+              </div>
             </div>
         """, unsafe_allow_html=True)
     with c_del:
@@ -1045,17 +1134,14 @@ def main_view():
         st.session_state.preview_data = None
 
     # ── Header ──────────────────────────────────────────────
-    c_l, c_r = st.columns([7, 3], vertical_alignment="center")
-    with c_l:
-        st.markdown(
-            f'<div class="badge">● {date_display}</div>'
-            f'<div style="margin-top:10px;font-size:2rem;font-weight:900;line-height:1.1;">Hola, Andrés 👋</div>',
-            unsafe_allow_html=True,
-        )
-    with c_r:
-        if st.button("➕ Nuevo gasto", type="primary", use_container_width=True):
-            st.session_state.view = "add"
-            st.rerun()
+    st.markdown(
+        f'<div class="badge"><span class="badge-dot"></span>{date_display}</div>'
+        f'<div class="greeting">Hola, Andrés 👋</div>',
+        unsafe_allow_html=True,
+    )
+    if st.button("➕  Nuevo gasto", type="primary", use_container_width=True, key="btn_nuevo_top"):
+        st.session_state.view = "add"
+        st.rerun()
 
     st.write("")
 
@@ -1126,30 +1212,34 @@ def main_view():
         <div class="card">
           <div class="card-watermark">👛</div>
           <div class="card-title">TOTAL GASTADO · {mes_sel.upper()}</div>
-          <div class="card-amount">S/ {total:,.2f}</div>
-          {"" if not presup else f'<div class="card-sub">Presupuesto S/ {presup:,.0f} · {presup_pct:.0f}%</div>'}
+          <div class="card-amount">
+            <span class="card-currency">S/</span>{total:,.2f}
+          </div>
+          {"" if not presup else f'<div class="card-sub">de S/ {presup:,.0f} presupuestado · <span style=\"color:{"#00E054" if presup_pct < 80 else "#FFC700" if presup_pct < 100 else "#FF4B4B"}\">{presup_pct:.0f}%</span></div>'}
         </div>
     """, unsafe_allow_html=True)
 
     if presup > 0:
         st.markdown(f"""
-            <div class="budget-bar-bg">
-              <div class="budget-bar-fill" style="width:{presup_pct:.1f}%;background:{presup_color};"></div>
-            </div>
-            <div class="budget-meta">
-              <span class="budget-spent">S/ {total:,.2f} gastado</span>
-              <span class="budget-remain" style="color:{presup_color};">S/ {max(presup-total,0):,.2f} restante</span>
+            <div class="budget-wrap">
+              <div class="budget-bar-bg">
+                <div class="budget-bar-fill" style="width:{presup_pct:.1f}%;background:{presup_color};"></div>
+              </div>
+              <div class="budget-meta">
+                <span class="budget-spent">S/ {total:,.2f} gastado</span>
+                <span class="budget-remain" style="color:{presup_color};">S/ {max(presup-total,0):,.2f} restante</span>
+              </div>
             </div>
         """, unsafe_allow_html=True)
 
     # ── Stats ────────────────────────────────────────────────
     if stats:
-        streak = days_with_expense_streak(df)
-        green  = "green" if streak > 0 else ""
+        streak     = days_with_expense_streak(df)
+        streak_cls = "streak" if streak > 0 else ""
         st.markdown(f"""
             <div class="stat-row">
               <div class="stat-pill">
-                <div class="stat-label">Prom/día</div>
+                <div class="stat-label">Prom / día</div>
                 <div class="stat-value">S/ {stats['avg_day']:,.0f}</div>
               </div>
               <div class="stat-pill">
@@ -1157,12 +1247,12 @@ def main_view():
                 <div class="stat-value">S/ {stats['proj']:,.0f}</div>
               </div>
               <div class="stat-pill">
-                <div class="stat-label">Gastos</div>
+                <div class="stat-label">Movimientos</div>
                 <div class="stat-value">{stats['n_tx']}</div>
               </div>
               <div class="stat-pill">
                 <div class="stat-label">🔥 Racha</div>
-                <div class="stat-value {green}">{streak}d</div>
+                <div class="stat-value {streak_cls}">{streak}d</div>
               </div>
             </div>
         """, unsafe_allow_html=True)
@@ -1211,17 +1301,6 @@ def main_view():
                     st.toast("⚠️ No se pudo guardar en Sheets — revisa la conexión")
                 st.rerun()
 
-    # ── FAB móvil (siempre visible en iPhone) ───────────────
-    st.markdown("""
-        <div class="fab-container">
-          <button class="fab-btn" onclick="
-            // dispara click en el botón real de Streamlit
-            const btns = Array.from(document.querySelectorAll('button'));
-            const nuevo = btns.find(b => b.innerText.includes('Nuevo gasto'));
-            if(nuevo) nuevo.click();
-          ">➕ Nuevo gasto</button>
-        </div>
-    """, unsafe_allow_html=True)
 
     # ── Búsqueda ─────────────────────────────────────────────
     if not dfm.empty:
