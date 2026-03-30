@@ -5,7 +5,6 @@
 # ============================================================
 
 import streamlit as st
-import streamlit.components.v1 as components
 import datetime as dt
 import gspread
 from google.oauth2.service_account import Credentials
@@ -433,13 +432,7 @@ def handle_actions():
 # ============================================================
 def render_app(payload: dict):
     data_json = json.dumps(payload, ensure_ascii=False, default=str)
-    html = f"""<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+    html = f"""<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap">
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}}
 :root{{
@@ -763,18 +756,10 @@ function todayStr(){{
 }}
 
 function nav(action, extra=''){{
-  // Use hidden form with target="_top" to navigate the TOP page (Streamlit), not the iframe
-  const f=document.createElement('form');
-  f.method='GET';
-  f.action='';
-  f.target='_top';  // targets the Streamlit page, not this iframe
-  const params={{'action':action}};
-  if(extra){{
-    extra.split('&').forEach(pair=>{{
-      const [k,v]=pair.split('=');
-      if(k)params[k]=decodeURIComponent(v||'');
-    }});
-  }}
+  let url='?action='+encodeURIComponent(action);
+  if(extra) url+='&'+extra;
+  window.location.href=url;
+}}
   Object.entries(params).forEach(([k,v])=>{{
     const inp=document.createElement('input');
     inp.type='hidden'; inp.name=k; inp.value=v;
@@ -1224,14 +1209,6 @@ function buildCSV(){{
   return hdr+rows;
 }}
 
-// Auto-resize iframe to content height
-function resizeIframe(){{
-  const h = document.body.scrollHeight;
-  window.parent.postMessage({{type:'streamlit:setFrameHeight', height:h}}, '*');
-}}
-const resizeObserver = new ResizeObserver(resizeIframe);
-resizeObserver.observe(document.body);
-
 // Toast auto-dismiss
 if(D.toast){{
   setTimeout(()=>nav('clear_toast'),2500);
@@ -1243,13 +1220,11 @@ if(D.view==='add'){{
   state.formData.fecha=todayStr();
 }}
 render();
-// Initial resize after render
-setTimeout(resizeIframe, 200);
 </script>
 {f'<div class="toast">{payload["toast"]}</div>' if payload.get("toast") else ""}
-</body>
-</html>"""
-    components.html(html, height=3000, scrolling=True)
+"""
+    # Render HTML directly in Streamlit page (no iframe = no security restrictions)
+    st.markdown(html, unsafe_allow_html=True)
 
 # ============================================================
 # 7) MAIN
