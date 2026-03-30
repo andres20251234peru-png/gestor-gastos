@@ -433,7 +433,13 @@ def handle_actions():
 # ============================================================
 def render_app(payload: dict):
     data_json = json.dumps(payload, ensure_ascii=False, default=str)
-    html = f"""<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap">
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}}
 :root{{
@@ -642,8 +648,10 @@ html,body{{background:var(--bg);color:var(--text);font-family:var(--font);
 .amount-value.zero{{color:var(--muted2);}}
 .amount-unit{{font-size:.65rem;font-weight:600;color:var(--muted2);
   letter-spacing:2px;text-transform:uppercase;margin-top:6px;}}
-.amount-input-hidden{{position:absolute;opacity:0;pointer-events:none;
-  width:1px;height:1px;}}
+.amount-input-hidden{{
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  opacity:0; z-index:10; cursor:text;
+}}
 .cat-grid{{display:grid;grid-template-columns:1fr 1fr;gap:7px;}}
 .cat-chip{{background:var(--s1);border:1px solid var(--border2);
   border-radius:var(--r-md);padding:12px 10px;
@@ -757,30 +765,12 @@ function todayStr(){{
 }}
 
 function nav(action, extra=''){{
-  // Get the real Streamlit page URL from the parent window
-  let base;
-  try {{
-    base = window.parent.location.href.split('?')[0];
-  }} catch(e) {{
-    // Cross-origin fallback: use the referrer or construct from known patterns
-    base = document.referrer ? document.referrer.split('?')[0] : '/';
-  }}
-  let url = base + '?action=' + encodeURIComponent(action);
-  if(extra) url += '&' + extra;
-  // Navigate the parent window (Streamlit page), not this iframe
-  try {{
-    window.parent.location.href = url;
-  }} catch(e) {{
-    window.location.href = url;
-  }}
-}}
-  Object.entries(params).forEach(([k,v])=>{{
-    const inp=document.createElement('input');
-    inp.type='hidden'; inp.name=k; inp.value=v;
-    f.appendChild(inp);
-  }});
-  document.body.appendChild(f);
-  f.submit();
+  const a = document.createElement('a');
+  a.target = '_parent';
+  let url = '?action=' + encodeURIComponent(action);
+  if (extra) url += '&' + extra;
+  a.href = url;
+  a.click();
 }}
 
 function donut(cats, size=160){{
@@ -815,7 +805,6 @@ function histChart(hist){{
   const max=Math.max(...vals,1);
   const curMes=D.mes.slice(0,3).toUpperCase();
   const bars=hist.map((h,i)=>{{
-    // Only bars with real data get height; empty months get 0
     const pct=h.total>0?Math.max(h.total/max*100,8):0;
     const isCur=h.mes===curMes;
     const cls=isCur?'current':h.total>0?'has-val':'empty';
@@ -1236,7 +1225,8 @@ if(D.view==='add'){{
 render();
 </script>
 {f'<div class="toast">{payload["toast"]}</div>' if payload.get("toast") else ""}
-"""
+</body>
+</html>"""
     components.html(html, height=3000, scrolling=True)
 
 # ============================================================
