@@ -628,7 +628,7 @@ html,body{{background:var(--bg);color:var(--text);font-family:var(--font);
 .hist-bar{{width:100%;border-radius:5px 5px 0 0;transition:height .5s cubic-bezier(.4,0,.2,1);min-height:3px;}}
 .hist-bar.current{{background:var(--green);box-shadow:0 0 10px rgba(0,224,84,.3);}}
 .hist-bar.has-val{{background:var(--s3);}}
-.hist-bar.empty{{background:var(--s2);}}
+.hist-bar.empty{{background:transparent;min-height:0!important;}}
 .hist-label{{font-size:.52rem;color:var(--muted2);font-weight:600;letter-spacing:.3px;text-transform:uppercase;}}
 .hist-label.current{{color:var(--green);}}
 
@@ -763,8 +763,25 @@ function todayStr(){{
 }}
 
 function nav(action, extra=''){{
-  const base=window.location.href.split('?')[0];
-  window.location.href=base+'?action='+action+(extra?'&'+extra:'');
+  // Use hidden form with target="_top" to navigate the TOP page (Streamlit), not the iframe
+  const f=document.createElement('form');
+  f.method='GET';
+  f.action='';
+  f.target='_top';  // targets the Streamlit page, not this iframe
+  const params={{'action':action}};
+  if(extra){{
+    extra.split('&').forEach(pair=>{{
+      const [k,v]=pair.split('=');
+      if(k)params[k]=decodeURIComponent(v||'');
+    }});
+  }}
+  Object.entries(params).forEach(([k,v])=>{{
+    const inp=document.createElement('input');
+    inp.type='hidden'; inp.name=k; inp.value=v;
+    f.appendChild(inp);
+  }});
+  document.body.appendChild(f);
+  f.submit();
 }}
 
 function donut(cats, size=160){{
@@ -795,10 +812,12 @@ function donut(cats, size=160){{
 }}
 
 function histChart(hist){{
-  const max=Math.max(...hist.map(h=>h.total),1);
+  const vals=hist.map(h=>h.total);
+  const max=Math.max(...vals,1);
   const curMes=D.mes.slice(0,3).toUpperCase();
   const bars=hist.map((h,i)=>{{
-    const pct=Math.max(h.total/max*100,h.total>0?6:0);
+    // Only bars with real data get height; empty months get 0
+    const pct=h.total>0?Math.max(h.total/max*100,8):0;
     const isCur=h.mes===curMes;
     const cls=isCur?'current':h.total>0?'has-val':'empty';
     return `<div class="hist-bar-wrap">
