@@ -257,7 +257,19 @@ div[data-testid="stNumberInput"] [data-testid="stNumberInputStepUp"] {
 div[data-testid="stNumberInput"] > div > div:first-child {
   background: transparent !important; border: none !important; box-shadow: none !important;
 }
-div[role="radiogroup"] { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+div[role="radiogroup"] {
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+  width: 100% !important; margin: 0 auto !important;
+}
+/* Centrar el contenedor padre que Streamlit agrega */
+div[data-testid="stRadio"] > div {
+  display: flex !important;
+  justify-content: center !important;
+  width: 100% !important;
+}
+div[data-testid="stRadio"] {
+  width: 100% !important;
+}
 div[role="radiogroup"] label {
   background: #0c0c0c !important; border: 1px solid #181818 !important;
   border-radius: 11px !important; padding: 10px 15px !important;
@@ -278,11 +290,17 @@ div[role="radiogroup"] label:has(input:checked) p { color: #00E054 !important; f
 div[role="radiogroup"] label > div:first-child { display: none; }
 @media (max-width: 599px) {
   div[role="radiogroup"] {
-    display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6px !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
   }
   div[role="radiogroup"] label {
     justify-content: center !important; text-align: center !important;
     min-height: 48px !important; border-radius: 13px !important;
+    width: 100% !important;
   }
   div[role="radiogroup"] label p { font-size: .85rem !important; }
   button[kind="secondary"] { height: 40px !important; font-size: .78rem !important; }
@@ -796,7 +814,7 @@ def render_donut(grp_df: pd.DataFrame, center_cat: str, center_pct: float):
   {rings_svg}
   <circle cx="{cx}" cy="{cy}" r="{r - 15}" fill="#060606"/>
   <text x="{cx}" y="{cy - 9}" text-anchor="middle"
-        font-size="8" font-weight="600" fill="#2e2e2e"
+        font-size="8" font-weight="700" fill="#555"
         font-family="Inter,sans-serif" letter-spacing="2">{label_short.upper()}</text>
   <text x="{cx}" y="{cy + 14}" text-anchor="middle"
         font-size="34" font-weight="800" fill="#f0f0f0"
