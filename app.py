@@ -1,38 +1,21 @@
 # ============================================================
-# GESTOR DE GASTOS v3.1
-# ============================================================
-# Mejoras v3:
-#   - Sin IA (eliminado completamente)
-#   - ID único por gasto (eliminar seguro)
-#   - Navegación ‹ › mes directo en header
-#   - Skeleton loader en primera carga
-#   - Confirmar gasto con pantalla de preview
-#   - Ordenar movimientos por monto o fecha
-#   - Animación visual al guardar (flash verde)
-#   - Botón eliminar compacto (mobile-friendly)
-#   - Fix zona horaria Perú (UTC-5)
-# Mejoras v3.1:
-#   - Presupuesto persistente en Google Sheets (tab "Presupuesto")
-#   - Botón "➕ Nuevo gasto" flotante en móvil (siempre visible)
-#   - Chips de categoría más grandes y táctiles en iPhone
-#   - Alerta visual al superar 80% / 100% del presupuesto
-#   - Racha corregida: días CON gasto consecutivos (gastos hormiga)
-#   - Teclado numérico en monto al abrir formulario (inputmode)
+# GESTOR DE GASTOS v4.0
+# Frontend: HTML/CSS/JS puro via st.components
+# Backend:  Python + Google Sheets
 # ============================================================
 
 import streamlit as st
+import streamlit.components.v1 as components
 import datetime as dt
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
-import os
 import json
 import pathlib
 import uuid
 import io
-from dotenv import load_dotenv
 import traceback
-import matplotlib.pyplot as plt
+from dotenv import load_dotenv
 
 # ============================================================
 # 1) CONFIG
@@ -44,18 +27,26 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── Meta tags PWA (iPhone "Añadir a pantalla de inicio") ──
+# Ocultar UI de Streamlit completamente
 st.markdown("""
-<head>
-  <!-- PWA: se ve como app nativa en iPhone -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Gastos">
-  <meta name="theme-color" content="#000000">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <!-- Ícono para pantalla de inicio iPhone -->
-  <link rel="apple-touch-icon" href="https://em-content.zobj.net/source/apple/354/money-bag_1f4b0.png">
-</head>
+<style>
+#MainMenu,header,footer,
+div[data-testid="stToolbar"],
+div[data-testid="stDecoration"],
+div[data-testid="stStatusWidget"],
+div[data-testid="stAppViewBlockContainer"] > div:first-child {
+  display:none!important;
+}
+.block-container {
+  padding:0!important; max-width:100%!important;
+}
+.stApp { background:#040404!important; }
+</style>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gastos">
+<meta name="theme-color" content="#040404">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 """, unsafe_allow_html=True)
 
 env_path = pathlib.Path(".") / ".env"
@@ -63,38 +54,20 @@ if not env_path.exists():
     env_path = pathlib.Path(".") / ".env.local"
 load_dotenv(dotenv_path=env_path)
 
-SHEET_NAME = "Gastos_Diarios"
+SHEET_NAME   = "Gastos_Diarios"
+BUDGET_SHEET = "Presupuesto"
 
-# ============================================================
-# 2) CONSTANTES
-# ============================================================
-MESES_ORD = [
-    "Enero","Febrero","Marzo","Abril","Mayo","Junio",
-    "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
-]
-DIAS_ORD = ["LUNES","MARTES","MIÉRCOLES","JUEVES","VIERNES","SÁBADO","DOMINGO"]
-
-TZ_OFFSET = dt.timezone(dt.timedelta(hours=-5))  # Perú UTC-5
-
-THEME = {
-    "bg":      "#000000",
-    "surface": "#0F0F10",
-    "card":    "#121212",
-    "primary": "#00E054",
-    "text":    "#FFFFFF",
-    "muted":   "#A6A6A6",
-    "stroke":  "#242424",
-    "input":   "#1E1E1E",
-    "danger":  "#FF4B4B",
-    "warning": "#FFC700",
-}
+MESES_ORD = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+             "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+DIAS_ORD  = ["LUNES","MARTES","MIÉRCOLES","JUEVES","VIERNES","SÁBADO","DOMINGO"]
+TZ_OFFSET = dt.timezone(dt.timedelta(hours=-5))
 
 CATEGORIES = {
     "Alimentación":      ("🍽️", "#00E054"),
-    "Transporte":        ("🚗", "#00F0FF"),
-    "Salud":             ("💊", "#FFC700"),
-    "Trabajo":           ("💼", "#FF4B4B"),
-    "Ocio":              ("🎵", "#FFFFFF"),
+    "Transporte":        ("🚗", "#00CFFF"),
+    "Salud":             ("💊", "#FFB800"),
+    "Trabajo":           ("💼", "#FF5555"),
+    "Ocio":              ("🎵", "#D0D0D0"),
     "Casa":              ("🏠", "#A259FF"),
     "Inversión":         ("📈", "#4A90E2"),
     "Pareja":            ("❤️", "#FF69B4"),
@@ -105,1366 +78,1158 @@ CATEGORIES = {
     "Compras Generales": ("🛒", "#B8E986"),
     "Otros":             ("📦", "#888888"),
 }
-
-VALID_CATS  = list(CATEGORIES.keys())
-ICON_MAP    = {k: v[0] for k, v in CATEGORIES.items()}
-COLORS_MAP  = {k: v[1] for k, v in CATEGORIES.items()}
-CAT_ALIASES = {"Comida": "Alimentación", "comida": "Alimentación"}
+VALID_CATS = list(CATEGORIES.keys())
+CAT_ALIASES = {"Comida": "Alimentación"}
 
 # ============================================================
-# 3) SESSION STATE
+# 2) SESSION STATE
 # ============================================================
 _now = dt.datetime.now(TZ_OFFSET)
 _DEFAULTS = {
-    "view":           "main",
-    "expanded_cat":   None,
-    "chart_mode":     "Categorías",
-    "hist_mode":      "Diario",
-    "sel_year":       _now.year,
-    "sel_month":      MESES_ORD[_now.month - 1],
-    "search_query":   "",
-    "confirm_delete": None,   # ID del gasto a borrar
-    "budget_mode":    False,
-    "presupuesto":    {},
-    "sort_by":        "fecha",
-    "sort_asc":       False,
-    "show_success":   False,
-    "preview_data":   None,
-    "data_loaded":    False,
-    "show_picker":     False,
+    "view":         "main",
+    "sel_year":     _now.year,
+    "sel_month":    MESES_ORD[_now.month - 1],
+    "sort_by":      "fecha",
+    "sort_asc":     False,
+    "action":       None,   # pending action from JS
+    "action_data":  None,
+    "toast_msg":    None,
+    "show_success": False,
+    "last_saved":   None,
 }
 for k, v in _DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
 # ============================================================
-# 4) CSS
-# ============================================================
-def inject_css():
-    primary = THEME["primary"]
-    # CSS base — no f-string para evitar conflictos con llaves CSS
-    css = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap');
-
-html, body, [class*="css"] {
-  font-family: 'Inter', -apple-system, sans-serif !important;
-  color: #e0e0e0 !important;
-  -webkit-font-smoothing: antialiased !important;
-}
-html, body { background: #040404 !important; overflow-x: hidden !important; }
-.stApp { background: #040404 !important; }
-.block-container {
-  max-width: 800px !important;
-  padding: max(20px, env(safe-area-inset-top)) 18px max(100px, env(safe-area-inset-bottom)) 18px !important;
-}
-#MainMenu, header, footer,
-div[data-testid="stToolbar"],
-div[data-testid="stDecoration"],
-div[data-testid="stStatusWidget"] {
-  display: none !important; visibility: hidden !important; height: 0 !important;
-}
-button {
-  font-family: 'Inter', sans-serif !important;
-  border-radius: 13px !important;
-  letter-spacing: -.1px !important;
-  transition: all .14s cubic-bezier(.4,0,.2,1) !important;
-}
-button[kind="primary"] {
-  background: #00E054 !important; color: #000 !important; border: none !important;
-  font-weight: 700 !important; font-size: .92rem !important; height: 50px !important;
-}
-button[kind="primary"]:hover {
-  filter: brightness(1.08) !important;
-  box-shadow: 0 6px 22px rgba(0,224,84,.25) !important;
-  transform: translateY(-1px) !important;
-}
-button[kind="primary"]:active  { transform: scale(.97) !important; }
-button[kind="primary"]:disabled { background: #141414 !important; color: #2a2a2a !important; }
-button[kind="secondary"] {
-  background: #0c0c0c !important; border: 1px solid #1a1a1a !important;
-  color: #555 !important; font-weight: 600 !important;
-  height: 42px !important; font-size: .82rem !important;
-}
-button[kind="secondary"]:hover {
-  background: #111 !important; border-color: #242424 !important; color: #aaa !important;
-}
-div[data-baseweb="select"] > div {
-  background: #0c0c0c !important; border: 1px solid #1a1a1a !important; border-radius: 12px !important;
-}
-div[data-baseweb="menu"], div[data-baseweb="popover"],
-ul[data-testid="stSelectboxVirtualDropdown"] {
-  background: #0e0e0e !important; border: 1px solid #1a1a1a !important; border-radius: 12px !important;
-}
-li[role="option"] { color: #999 !important; font-size: .88rem !important; }
-li[role="option"][aria-selected="true"] { background: #141414 !important; color: #00E054 !important; }
-input[type="text"], div[data-testid="stTextInput"] input {
-  background: #0c0c0c !important; border: 1px solid #1a1a1a !important;
-  border-radius: 12px !important; color: #ddd !important;
-  padding: 13px 16px !important; font-size: .88rem !important;
-  font-family: 'Inter', sans-serif !important;
-  transition: border-color .15s ease, box-shadow .15s ease !important;
-}
-input[type="text"]:focus, div[data-testid="stTextInput"] input:focus {
-  border-color: rgba(0,224,84,.3) !important;
-  box-shadow: 0 0 0 3px rgba(0,224,84,.06) !important;
-  outline: none !important;
-}
-input[type="text"]::placeholder,
-div[data-testid="stTextInput"] input::placeholder { color: #252525 !important; }
-/* Monto input — grande y centrado */
-div[data-testid="stTextInput"]:has([placeholder="0.00"]) input {
-  font-size: clamp(2.2rem, 8vw, 3.5rem) !important;
-  font-weight: 800 !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  text-align: center !important;
-  letter-spacing: -1.5px !important;
-  color: #f0f0f0 !important;
-  border-radius: 18px !important;
-  padding: 20px 16px !important;
-  caret-color: #00E054 !important;
-}
-div[data-testid="stNumberInput"] {
-  background: transparent !important; border: none !important;
-  width: 100% !important;
-}
-div[data-testid="stNumberInput"] > div {
-  background: transparent !important; border: none !important;
-  width: 100% !important; gap: 0 !important;
-}
-div[data-testid="stNumberInput"] input {
-  background: transparent !important; border: none !important;
-  color: #fff !important;
-  font-size: clamp(2.8rem, 11vw, 4.5rem) !important;
-  font-weight: 800 !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  text-align: center !important; padding: 4px 0 !important;
-  caret-color: #00E054 !important; letter-spacing: -2px !important;
-  box-shadow: none !important; width: 100% !important;
-  -webkit-appearance: none !important;
-}
-div[data-testid="stNumberInput"] input:focus {
-  border: none !important; box-shadow: none !important; outline: none !important;
-  background: transparent !important;
-}
-/* Ocultar flechas +/- del number input */
-div[data-testid="stNumberInput"] button,
-div[data-testid="stNumberInput"] > div > div:last-child,
-div[data-testid="stNumberInput"] [data-testid="stNumberInputStepDown"],
-div[data-testid="stNumberInput"] [data-testid="stNumberInputStepUp"] {
-  display: none !important;
-}
-/* Fix fondo azul oscuro del contenedor Streamlit */
-div[data-testid="stNumberInput"] > div > div:first-child {
-  background: transparent !important; border: none !important; box-shadow: none !important;
-}
-div[role="radiogroup"] {
-  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
-  width: 100% !important; margin: 0 auto !important;
-}
-/* Centrar el contenedor padre que Streamlit agrega */
-div[data-testid="stRadio"] > div {
-  display: flex !important;
-  justify-content: center !important;
-  width: 100% !important;
-}
-div[data-testid="stRadio"] {
-  width: 100% !important;
-}
-div[role="radiogroup"] label {
-  background: #0c0c0c !important; border: 1px solid #181818 !important;
-  border-radius: 11px !important; padding: 10px 15px !important;
-  cursor: pointer; transition: all .12s ease;
-  min-height: 44px !important; display: flex !important; align-items: center !important;
-}
-div[role="radiogroup"] label p {
-  color: #444 !important; font-weight: 600 !important; font-size: .83rem !important;
-  margin: 0 !important; font-family: 'Inter', sans-serif !important;
-  white-space: nowrap !important; transition: color .12s ease;
-}
-div[role="radiogroup"] label:hover { background: #111 !important; border-color: #222 !important; }
-div[role="radiogroup"] label:hover p { color: #aaa !important; }
-div[role="radiogroup"] label:has(input:checked) {
-  background: rgba(0,224,84,.08) !important; border-color: rgba(0,224,84,.25) !important;
-}
-div[role="radiogroup"] label:has(input:checked) p { color: #00E054 !important; font-weight: 700 !important; }
-div[role="radiogroup"] label > div:first-child { display: none; }
-@media (max-width: 599px) {
-  div[role="radiogroup"] {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    gap: 6px !important;
-    width: 100% !important;
-    margin: 0 auto !important;
-    padding: 0 !important;
-  }
-  div[role="radiogroup"] label {
-    justify-content: center !important; text-align: center !important;
-    min-height: 48px !important; border-radius: 13px !important;
-    width: 100% !important;
-  }
-  div[role="radiogroup"] label p { font-size: .85rem !important; }
-  button[kind="secondary"] { height: 40px !important; font-size: .78rem !important; }
-  button[kind="primary"]   { height: 50px !important; }
-  .block-container { padding-left: 13px !important; padding-right: 13px !important; }
-  .card { border-radius: 19px !important; padding: 20px 16px 17px !important; }
-  .card-amount { letter-spacing: -2px !important; }
-  .mov-item { padding: 12px 12px !important; border-radius: 12px !important; }
-  .stat-pill { padding: 11px 11px 9px !important; border-radius: 13px !important; }
-  .amount-hero { border-radius: 17px !important; }
-}
-.badge {
-  display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px 5px 8px;
-  border-radius: 999px; background: #080808; border: 1px solid #161616;
-  color: #2a2a2a !important; font-weight: 600; font-size: .68rem;
-  letter-spacing: 1.8px; text-transform: uppercase;
-}
-.badge-dot {
-  width: 5px; height: 5px; border-radius: 50%; background: #00E054;
-  box-shadow: 0 0 6px #00E054; flex-shrink: 0;
-}
-.greeting {
-  font-size: clamp(1.65rem, 5vw, 2rem); font-weight: 800; line-height: 1.2;
-  color: #e8e8e8; margin: 8px 0 14px; letter-spacing: -.5px;
-}
-.card {
-  background: #0c0c0c !important; border: 1px solid #151515 !important;
-  border-radius: 22px !important; padding: 26px 22px 22px !important;
-  position: relative; overflow: hidden; margin-top: 6px;
-  display: flex !important; flex-direction: column !important; align-items: center !important;
-}
-.card::before {
-  content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-  width: 40%; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0,224,84,.18), transparent);
-}
-.card::after {
-  content: ''; position: absolute; top: 35%; left: 50%; transform: translate(-50%,-50%);
-  width: 55%; height: 70px;
-  background: radial-gradient(ellipse, rgba(0,224,84,.035) 0%, transparent 70%);
-  pointer-events: none;
-}
-.card-title {
-  color: #242424 !important; font-size: .65rem !important; letter-spacing: 3px !important;
-  text-transform: uppercase !important; margin-bottom: 8px !important; font-weight: 600 !important;
-}
-.card-amount-wrap { display: flex; align-items: baseline; gap: 5px; position: relative; z-index: 1; }
-.card-currency {
-  font-size: clamp(1rem, 2.5vw, 1.3rem); font-weight: 600; color: #252525;
-  font-family: 'JetBrains Mono', monospace;
-}
-.card-amount {
-  font-size: clamp(2.6rem, 9vw, 3.8rem) !important; font-weight: 800 !important;
-  color: #f0f0f0 !important; font-family: 'JetBrains Mono', monospace !important;
-  letter-spacing: -2.5px !important; line-height: 1 !important;
-}
-.card-sub {
-  color: #222 !important; font-size: .72rem !important;
-  font-weight: 500 !important; margin-top: 10px !important;
-}
-.card-sub span { color: #2d6644; font-weight: 600; }
-.budget-wrap { margin-top: 10px; padding: 0 2px; }
-.budget-bar-bg { width: 100%; height: 3px; background: #141414; border-radius: 99px; overflow: hidden; }
-.budget-bar-fill { height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.4,0,.2,1); }
-.budget-meta { display: flex; justify-content: space-between; margin-top: 6px; }
-.budget-spent  { color: #242424; font-size: .7rem; font-weight: 500; }
-.budget-remain { font-size: .7rem; font-weight: 600; }
-.budget-alert {
-  border-radius: 11px; padding: 10px 13px; margin-top: 9px;
-  font-weight: 600; font-size: .8rem; display: flex; align-items: center; gap: 8px;
-  animation: fadeUp .25s ease forwards;
-}
-.budget-alert.warn   { background: rgba(200,140,0,.06); border: 1px solid rgba(200,140,0,.14); color: #8a6500; }
-.budget-alert.danger { background: rgba(200,50,50,.06);  border: 1px solid rgba(200,50,50,.16);  color: #903030; }
-.stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
-@media (min-width: 600px) { .stat-row { grid-template-columns: repeat(4, 1fr); } }
-.stat-pill {
-  background: #080808; border: 1px solid #141414; border-radius: 15px;
-  padding: 13px 13px 11px; display: flex; flex-direction: column; gap: 6px;
-}
-.stat-label { color: #222; font-size: .63rem; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
-.stat-value { color: #b0b0b0; font-size: 1rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; letter-spacing: -.4px; }
-.stat-value.streak { color: #00E054; font-size: 1.1rem; }
-.month-nav { display: flex; align-items: center; justify-content: center; padding: 4px 0 0; }
-.month-nav-label { font-size: .98rem; font-weight: 700; color: #bbb; text-align: center; }
-.month-label     { font-size: .98rem; font-weight: 700; color: #bbb; text-align: center; }
-.section-title {
-  color: #1e1e1e !important; font-weight: 600; font-size: .63rem;
-  letter-spacing: 3px; margin-top: 20px; margin-bottom: 8px; text-transform: uppercase;
-}
-div[data-testid="stExpander"] {
-  background: #0c0c0c !important; border: 1px solid #151515 !important;
-  border-radius: 17px !important; overflow: hidden; margin-bottom: 5px !important;
-}
-div[data-testid="stExpander"]:hover { border-color: #1e1e1e !important; }
-div[data-testid="stExpander"] details { background: #0c0c0c !important; }
-div[data-testid="stExpander"] summary {
-  padding: 15px 17px !important; background: #0c0c0c !important; min-height: 52px !important;
-}
-div[data-testid="stExpander"] summary:hover { background: #0f0f0f !important; }
-div[data-testid="stExpander"] summary p { font-weight: 700 !important; font-size: .88rem !important; color: #aaa !important; }
-div[data-testid="stExpander"] summary svg { width: 17px !important; height: 17px !important; color: #2a2a2a !important; }
-.mov-item {
-  background: #0c0c0c; border: 1px solid #151515; border-radius: 13px;
-  padding: 13px 15px; margin-bottom: 4px;
-  display: flex; justify-content: space-between; align-items: center;
-  transition: border-color .12s ease;
-}
-.mov-item:hover { border-color: #1e1e1e; }
-.mov-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.mov-cat  { font-weight: 600; font-size: .88rem; color: #bbb; }
-.mov-desc { color: #242424; font-size: .75rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px; }
-.mov-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.mov-amt  { font-weight: 700; color: #00E054; white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: .86rem; letter-spacing: -.3px; }
-.mov-date { font-size: .66rem; color: #202020; font-weight: 500; }
-.legend-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #0f0f0f; }
-.legend-row:last-child { border-bottom: none; }
-.legend-left { display: flex; align-items: center; gap: 8px; }
-.legend-dot  { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.legend-name { color: #777; font-weight: 600; font-size: .82rem; }
-.legend-pct  { color: #2e2e2e; font-weight: 600; font-size: .8rem; font-family: 'JetBrains Mono', monospace; }
-.rich-card   { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #101010; }
-.rich-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7px; }
-.rich-left   { display: flex; flex-direction: column; gap: 3px; }
-.rich-right  { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.rich-cat    { font-size: .88rem; font-weight: 700; color: #aaa; }
-.rich-sub    { font-size: .65rem; font-weight: 600; color: #252525; text-transform: uppercase; letter-spacing: 1px; }
-.rich-amt    { font-size: 1rem; font-weight: 700; color: #ccc; font-family: 'JetBrains Mono', monospace; letter-spacing: -.5px; }
-.rich-pct    { font-size: .75rem; font-weight: 700; }
-.rich-bar-bg  { width: 100%; height: 3px; background: #111; border-radius: 99px; margin-top: 7px; overflow: hidden; }
-.rich-bar-fill { height: 100%; border-radius: 99px; opacity: .65; }
-.amount-hero {
-  background: #0c0c0c; border: 1px solid #151515; border-radius: 20px;
-  padding: 22px 20px 16px; text-align: center; position: relative; overflow: hidden;
-}
-.amount-hero::before {
-  content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
-  width: 35%; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0,224,84,.12), transparent);
-}
-.amount-currency-label { font-size: .63rem; font-weight: 600; color: #242424; letter-spacing: 3px; text-transform: uppercase; }
-.amount-hint           { font-size: .7rem; color: #1e1e1e; font-weight: 500; margin-top: 4px; }
-.amount-hint.has-value { color: #1e4a2e; }
-.cat-section-label  { font-size: .63rem; font-weight: 600; color: #1e1e1e; letter-spacing: 3px; text-transform: uppercase; text-align: center; margin: 18px 0 9px; }
-.form-field-label   { font-size: .63rem; font-weight: 600; color: #1e1e1e; letter-spacing: 3px; text-transform: uppercase; text-align: center; margin: 16px 0 7px; }
-.preview-card { background: #0c0c0c; border: 1px solid #151515; border-radius: 18px; padding: 18px; margin: 14px 0; }
-.preview-amount-big { text-align: center; font-size: clamp(2.2rem, 7vw, 3rem); font-weight: 800; font-family: 'JetBrains Mono', monospace; letter-spacing: -2px; margin-bottom: 18px; line-height: 1; }
-.preview-row   { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #101010; }
-.preview-row:last-child { border-bottom: none; }
-.preview-label { color: #242424; font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.8px; }
-.preview-value { color: #888; font-weight: 600; font-size: .86rem; }
-@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-.success-flash  { position: fixed; inset: 0; z-index: 9999; pointer-events: none; background: radial-gradient(ellipse at 50% 0%, rgba(0,224,84,.04) 0%, transparent 60%); animation: fadeUp .3s ease forwards; }
-.success-banner { background: #090e0b; border: 1px solid #121c14; border-radius: 14px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 12px; animation: fadeUp .35s ease forwards; }
-.success-icon   { font-size: 1.6rem; }
-.success-title  { font-weight: 700; color: #00E054; font-size: .88rem; margin-bottom: 2px; }
-.success-sub    { font-size: .75rem; color: #162a1c; font-weight: 500; }
-@keyframes shimmer { 0% { background-position: -700px 0; } 100% { background-position: 700px 0; } }
-.skeleton      { background: linear-gradient(90deg, #0a0a0a 25%, #121212 50%, #0a0a0a 75%); background-size: 700px 100%; animation: shimmer 1.8s infinite linear; border-radius: 13px; }
-.skeleton-card { height: 148px; margin-bottom: 7px; border-radius: 22px; }
-.skeleton-pill { height: 70px; flex: 1; border-radius: 15px; }
-.skeleton-row  { height: 58px; margin-bottom: 4px; border-radius: 13px; }
-.sort-label    { color: #1e1e1e; font-size: .63rem; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; padding-top: 10px; }
-div[data-testid="stToast"] { background: #0e0e0e !important; border: 1px solid #1a1a1a !important; color: #bbb !important; border-radius: 11px !important; box-shadow: 0 8px 28px rgba(0,0,0,.55) !important; }
-div[data-testid="stToast"] p, div[data-testid="stToast"] svg { color: #bbb !important; fill: #bbb !important; }
-.empty-state { text-align: center; padding: 60px 24px; }
-.empty-icon  { font-size: 2.8rem; margin-bottom: 12px; opacity: .35; }
-.empty-title { font-size: .95rem; font-weight: 700; color: #1e1e1e; margin-bottom: 5px; }
-.empty-sub   { font-size: .8rem; color: #161616; font-weight: 500; }
-"""
-    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
-
-
-# ============================================================
-# 5) GOOGLE SHEETS
+# 3) GOOGLE SHEETS — BACKEND
 # ============================================================
 @st.cache_resource
 def get_client():
     try:
-        scope = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
+        scope = ["https://www.googleapis.com/auth/spreadsheets",
+                 "https://www.googleapis.com/auth/drive"]
         info  = json.loads(st.secrets["GCP_SERVICE_ACCOUNT"])
         creds = Credentials.from_service_account_info(info, scopes=scope)
         return gspread.authorize(creds)
     except Exception as e:
-        st.error("❌ Error conectando con Google Sheets")
-        st.exception(e)
+        st.error(f"❌ Error conectando con Google Sheets: {e}")
         return None
-
 
 def normalize_mes(m):
-    if not isinstance(m, str):
-        return None
+    if not isinstance(m, str): return None
     return {k.lower(): k for k in MESES_ORD}.get(m.strip().lower(), m.strip().capitalize())
-
 
 def normalize_cat(c):
     c = str(c).strip()
     return CAT_ALIASES.get(c, c if c in VALID_CATS else "Otros")
 
-
 @st.cache_data(ttl=180, show_spinner=False)
 def load_data() -> pd.DataFrame:
     client = get_client()
-    if not client:
-        return pd.DataFrame()
+    if not client: return pd.DataFrame()
     try:
         sheet = client.open(SHEET_NAME).sheet1
         df    = pd.DataFrame(sheet.get_all_records())
-        if df.empty:
-            return df
-
+        if df.empty: return df
         cu = {c.strip().upper(): c for c in df.columns}
-
-        # FECHA
         fcol = cu.get("FECHA")
         df["FECHA"] = pd.to_datetime(df[fcol], errors="coerce", dayfirst=True) if fcol else pd.NaT
-
-        # MES
-        df["MES"] = (
-            df[cu["MES"]].apply(normalize_mes) if "MES" in cu
-            else df["FECHA"].dt.month.map(lambda x: MESES_ORD[x-1] if pd.notna(x) else None)
-        )
-
-        # AÑO
-        df["AÑO"] = (
-            pd.to_numeric(df[cu["AÑO"]], errors="coerce").fillna(0).astype(int) if "AÑO" in cu
-            else df["FECHA"].dt.year.fillna(0).astype(int)
-        )
-
-        # CATEGORÍA
+        df["MES"]   = (df[cu["MES"]].apply(normalize_mes) if "MES" in cu
+                       else df["FECHA"].dt.month.map(lambda x: MESES_ORD[x-1] if pd.notna(x) else None))
+        df["AÑO"]   = (pd.to_numeric(df[cu["AÑO"]], errors="coerce").fillna(0).astype(int) if "AÑO" in cu
+                       else df["FECHA"].dt.year.fillna(0).astype(int))
         ccat = cu.get("CATEGORÍA") or cu.get("CATEGORIA")
-        df["CATEGORÍA"] = df[ccat].apply(normalize_cat) if ccat else "Otros"
-
-        # DESCRIPCION
+        df["CATEGORÍA"]   = df[ccat].apply(normalize_cat) if ccat else "Otros"
         cdesc = cu.get("DESCRIPCION") or cu.get("DESCRIPCIÓN")
         df["DESCRIPCION"] = df[cdesc].astype(str).str.strip() if cdesc else ""
-
-        # MONTO
         if "MONTO" in cu:
             df["MONTO"] = pd.to_numeric(
-                df[cu["MONTO"]].astype(str).str.replace(",", "", regex=False),
-                errors="coerce",
-            ).fillna(0.0)
+                df[cu["MONTO"]].astype(str).str.replace(",","",regex=False),
+                errors="coerce").fillna(0.0)
         else:
             df["MONTO"] = 0.0
-
-        # ID — columna clave para eliminar de forma segura
-        if "ID" in cu:
-            df["ID"] = df[cu["ID"]].astype(str).str.strip()
-        else:
-            # Gastos legacy sin ID: asignamos temporal (no se puede borrar de forma segura)
-            df["ID"] = [f"legacy_{i}" for i in range(len(df))]
-
+        df["ID"] = (df[cu["ID"]].astype(str).str.strip() if "ID" in cu
+                    else [f"legacy_{i}" for i in range(len(df))])
         df = df[(df["AÑO"] > 0) & (df["MES"].notna()) & (df["MONTO"] > 0)]
         return df.reset_index(drop=True)
     except Exception:
         return pd.DataFrame()
 
-
-def save_to_sheet(data: dict) -> tuple[bool, str]:
+def save_to_sheet(data: dict):
     client = get_client()
-    if not client:
-        return False, "Sin credenciales."
+    if not client: return False, "Sin credenciales."
     try:
         sheet    = client.open(SHEET_NAME).sheet1
         mes_name = MESES_ORD[data["date"].month - 1]
         gasto_id = str(uuid.uuid4())[:8]
-
-        # Asegurar que existe la columna ID en el header
-        headers = sheet.row_values(1)
+        headers  = sheet.row_values(1)
         if "ID" not in headers:
-            sheet.update_cell(1, len(headers) + 1, "ID")
-
-        row = [
-            data["date"].strftime("%d/%m/%Y"),
-            mes_name,
-            int(data["date"].year),
-            data["category"],
-            data["description"],
-            float(data["amount"]),
-            gasto_id,
-        ]
-        sheet.append_row(row)
+            sheet.update_cell(1, len(headers)+1, "ID")
+        sheet.append_row([
+            data["date"].strftime("%d/%m/%Y"), mes_name,
+            int(data["date"].year), data["category"],
+            data["description"], float(data["amount"]), gasto_id,
+        ])
         load_data.clear()
         return True, gasto_id
     except Exception as e:
         return False, str(e)
 
-
-def delete_from_sheet(gasto_id: str) -> tuple[bool, str]:
-    """Busca la fila por ID único y la elimina. Nunca borra la fila equivocada."""
+def delete_from_sheet(gasto_id: str):
     client = get_client()
-    if not client:
-        return False, "Sin credenciales."
+    if not client: return False, "Sin credenciales."
     try:
         sheet   = client.open(SHEET_NAME).sheet1
         values  = sheet.get_all_values()
         headers = [h.strip().upper() for h in values[0]]
-        id_col  = next((i for i, h in enumerate(headers) if h == "ID"), None)
-
-        if id_col is None:
-            return False, "Columna ID no encontrada. Agrega la columna ID al Sheet."
-
+        id_col  = next((i for i,h in enumerate(headers) if h=="ID"), None)
+        if id_col is None: return False, "Columna ID no encontrada."
         row_to_delete = next(
-            (i + 2 for i, row in enumerate(values[1:])
-             if len(row) > id_col and str(row[id_col]).strip() == gasto_id),
-            None,
-        )
-        if row_to_delete is None:
-            return False, f"No se encontró el gasto con ID '{gasto_id}'."
-
+            (i+2 for i,row in enumerate(values[1:])
+             if len(row)>id_col and str(row[id_col]).strip()==gasto_id), None)
+        if row_to_delete is None: return False, f"ID '{gasto_id}' no encontrado."
         sheet.delete_rows(row_to_delete)
         load_data.clear()
         return True, "OK"
     except Exception as e:
         return False, str(e)
 
-
-# ============================================================
-# 5b) PRESUPUESTO PERSISTENTE (tab "Presupuesto" en el Sheet)
-# ============================================================
-BUDGET_SHEET = "Presupuesto"   # nombre de la segunda hoja
-
-
-def _get_budget_sheet():
-    """Devuelve la hoja Presupuesto, creándola si no existe."""
-    client = get_client()
-    if not client:
-        return None
-    try:
-        ss = client.open(SHEET_NAME)
-        try:
-            return ss.worksheet(BUDGET_SHEET)
-        except Exception:
-            ws = ss.add_worksheet(title=BUDGET_SHEET, rows=50, cols=4)
-            ws.update("A1:D1", [["AÑO", "MES", "PRESUPUESTO", "UPDATED"]])
-            return ws
-    except Exception:
-        return None
-
-
 @st.cache_data(ttl=300, show_spinner=False)
 def load_budgets() -> dict:
-    """Carga todos los presupuestos → {(año, mes): valor}."""
-    ws = _get_budget_sheet()
-    if not ws:
-        return {}
+    client = get_client()
+    if not client: return {}
     try:
-        rows = ws.get_all_records()
-        out  = {}
-        for r in rows:
+        ss = client.open(SHEET_NAME)
+        try: ws = ss.worksheet(BUDGET_SHEET)
+        except Exception:
+            ws = ss.add_worksheet(title=BUDGET_SHEET, rows=50, cols=4)
+            ws.update("A1:D1", [["AÑO","MES","PRESUPUESTO","UPDATED"]])
+            return {}
+        out = {}
+        for r in ws.get_all_records():
             try:
-                anio = int(r.get("AÑO", 0))
-                mes  = str(r.get("MES", "")).strip()
-                val  = float(r.get("PRESUPUESTO", 0))
-                if anio > 0 and mes and val > 0:
-                    out[(anio, mes)] = val
-            except Exception:
-                pass
+                anio = int(r.get("AÑO",0)); mes = str(r.get("MES","")).strip()
+                val  = float(r.get("PRESUPUESTO",0))
+                if anio > 0 and mes and val > 0: out[(anio,mes)] = val
+            except: pass
         return out
-    except Exception:
-        return {}
+    except: return {}
 
-
-def save_budget(anio: int, mes: str, valor: float):
-    """Guarda o actualiza el presupuesto de un mes/año en Sheets."""
-    ws = _get_budget_sheet()
-    if not ws:
-        return False
+def save_budget(anio, mes, valor):
+    client = get_client()
+    if not client: return False
     try:
-        rows   = ws.get_all_values()
-        header = [h.upper() for h in rows[0]] if rows else []
-        # Buscar fila existente
+        ss = client.open(SHEET_NAME)
+        try: ws = ss.worksheet(BUDGET_SHEET)
+        except Exception:
+            ws = ss.add_worksheet(title=BUDGET_SHEET, rows=50, cols=4)
+            ws.update("A1:D1", [["AÑO","MES","PRESUPUESTO","UPDATED"]])
+        rows = ws.get_all_values()
         for i, row in enumerate(rows[1:], start=2):
-            if len(row) >= 3:
+            if len(row)>=3:
                 try:
-                    if int(row[0]) == anio and row[1].strip() == mes:
+                    if int(row[0])==anio and row[1].strip()==mes:
                         ws.update(f"C{i}:D{i}", [[valor, dt.datetime.now().strftime("%Y-%m-%d %H:%M")]])
-                        load_budgets.clear()
-                        return True
-                except Exception:
-                    pass
-        # Fila nueva
+                        load_budgets.clear(); return True
+                except: pass
         ws.append_row([anio, mes, valor, dt.datetime.now().strftime("%Y-%m-%d %H:%M")])
-        load_budgets.clear()
-        return True
-    except Exception:
-        return False
+        load_budgets.clear(); return True
+    except: return False
 
+# ============================================================
+# 4) DATA HELPERS
+# ============================================================
+def now_peru(): return dt.datetime.now(TZ_OFFSET)
 
-def now_peru() -> dt.datetime:
-    return dt.datetime.now(TZ_OFFSET)
-
-
-def filter_data(df: pd.DataFrame, mes, anio: int) -> pd.DataFrame:
-    if df.empty:
-        return df
+def filter_data(df, mes, anio):
+    if df.empty: return df
     mask = df["AÑO"] == int(anio)
-    if mes is not None:
-        mask &= df["MES"] == mes
+    if mes: mask &= df["MES"] == mes
     return df[mask].copy()
 
-
-def compute_stats(dfm: pd.DataFrame, total: float) -> dict:
-    if dfm.empty or total <= 0:
-        return {}
-    now     = now_peru()
-    avg_day = total / max(now.day, 1)
-    return {
-        "avg_day": avg_day,
-        "proj":    avg_day * 30,
-        "n_tx":    len(dfm),
-        "top_cat": dfm.groupby("CATEGORÍA")["MONTO"].sum().idxmax(),
-    }
-
-
-def days_with_expense_streak(df: pd.DataFrame) -> int:
-    """Racha: días CONSECUTIVOS con al menos un gasto (hasta hoy)."""
-    if df.empty:
-        return 0
+def days_streak(df):
+    if df.empty: return 0
     today = now_peru().date()
     dates = set(df["FECHA"].dropna().dt.date.unique())
-    streak = 0
-    d = today
+    streak, d = 0, today
     while d in dates:
-        streak += 1
-        d -= dt.timedelta(days=1)
+        streak += 1; d -= dt.timedelta(days=1)
     return streak
 
+def build_payload(df, mes, anio, budgets):
+    """Construye el JSON que el frontend necesita para renderizar."""
+    dfm   = filter_data(df, mes, anio)
+    total = float(dfm["MONTO"].sum()) if not dfm.empty else 0.0
+    presup = budgets.get((anio, mes), 0.0)
 
-def apply_sort(dfm: pd.DataFrame) -> pd.DataFrame:
-    col = "FECHA" if st.session_state.sort_by == "fecha" else "MONTO"
-    return dfm.sort_values(col, ascending=st.session_state.sort_asc)
+    # Stats
+    now_p = now_peru()
+    avg_day = total / max(now_p.day, 1) if total > 0 else 0
+    streak  = days_streak(df)
 
-
-def export_csv(dfm: pd.DataFrame) -> bytes:
-    keep = [c for c in ["FECHA","MES","AÑO","CATEGORÍA","DESCRIPCION","MONTO","ID"] if c in dfm.columns]
-    buf  = io.StringIO()
-    dfm[keep].to_csv(buf, index=False)
-    return buf.getvalue().encode()
-
-
-def prev_month():
-    idx = MESES_ORD.index(st.session_state.sel_month)
-    if idx == 0:
-        st.session_state.sel_month = MESES_ORD[11]
-        st.session_state.sel_year -= 1
-    else:
-        st.session_state.sel_month = MESES_ORD[idx - 1]
-
-
-def next_month():
-    idx = MESES_ORD.index(st.session_state.sel_month)
-    if idx == 11:
-        st.session_state.sel_month = MESES_ORD[0]
-        st.session_state.sel_year += 1
-    else:
-        st.session_state.sel_month = MESES_ORD[idx + 1]
-
-
-# ============================================================
-# 7) CHARTS
-# ============================================================
-def _fig_base(w=5, h=5, dpi=200):
-    fig, ax = plt.subplots(figsize=(w, h), dpi=dpi)
-    fig.patch.set_facecolor("none")
-    ax.set_facecolor("none")
-    return fig, ax
-
-
-def render_donut(grp_df: pd.DataFrame, center_cat: str, center_pct: float):
-    """Donut SVG con stroke-dasharray — geometría correcta garantizada."""
-    import math
-    size = 200
-    cx = cy = size / 2
-    r = 72
-    circumference = 2 * math.pi * r
-
-    total_val = float(grp_df["MONTO"].sum())
-    circles   = []
-    offset    = circumference * 0.25  # start from top
-
-    for _, row in grp_df.iterrows():
-        cat   = row["CATEGORÍA"]
-        pct   = float(row["MONTO"]) / total_val if total_val > 0 else 0
-        dash  = pct * circumference
-        color = COLORS_MAP.get(cat, "#555")
-        circles.append((dash, offset, color))
-        offset += dash  # next slice starts where this ends (wrap handled by SVG)
-
-    rings_svg = ""
-    for dash, off, color in circles:
-        gap = circumference - dash
-        rings_svg += (
-            f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" '
-            f'stroke="{color}" stroke-width="28" stroke-opacity="0.92" '
-            f'stroke-dasharray="{dash:.2f} {gap:.2f}" '
-            f'stroke-dashoffset="-{off:.2f}" '
-            f'transform="rotate(-90 {cx} {cy})"/>\n'
-        )
-
-    label_short = center_cat[:9] + "…" if len(center_cat) > 9 else center_cat
-    color_pct   = COLORS_MAP.get(center_cat, "#00E054")
-
-    svg = f"""<div style="width:100%;max-width:200px;margin:0 auto;">
-<svg viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;">
-  <circle cx="{cx}" cy="{cy}" r="{r + 16}" fill="#080808"/>
-  {rings_svg}
-  <circle cx="{cx}" cy="{cy}" r="{r - 15}" fill="#060606"/>
-  <text x="{cx}" y="{cy - 9}" text-anchor="middle"
-        font-size="8" font-weight="700" fill="#555"
-        font-family="Inter,sans-serif" letter-spacing="2">{label_short.upper()}</text>
-  <text x="{cx}" y="{cy + 14}" text-anchor="middle"
-        font-size="34" font-weight="800" fill="#f0f0f0"
-        font-family="'JetBrains Mono',monospace">{int(center_pct)}<tspan font-size="15" fill="{color_pct}" font-weight="700">%</tspan></text>
-</svg></div>"""
-    st.markdown(svg, unsafe_allow_html=True)
-
-
-def render_history_chart(df: pd.DataFrame, view_mode="Diario"):
-    if df.empty:
-        st.info("No hay datos para mostrar.")
-        return
-    df = df.copy()
-    df["_dt"] = pd.to_datetime(df["FECHA"])
-
-    if view_mode == "Diario":
-        grouped = df.groupby(df["_dt"].dt.day)["MONTO"].sum()
-        xlabels = [str(int(v)) for v in grouped.index]
-    elif view_mode == "Semanal":
-        df["_w"] = (df["_dt"].dt.day - 1) // 7 + 1
-        grouped  = df.groupby("_w")["MONTO"].sum()
-        xlabels  = [f"SEM {int(v)}" for v in grouped.index]
-    else:
-        grouped = df.groupby(df["_dt"].dt.month)["MONTO"].sum()
-        xlabels = [MESES_ORD[int(v)-1][:3].upper() for v in grouped.index]
-
-    x, y    = list(grouped.index), list(grouped.values)
-    fig, ax = _fig_base(6, 3, 180)
-    bars    = ax.bar(x, y, color=THEME["primary"], alpha=0.85, edgecolor="none", width=0.6)
-    if y:
-        bars[y.index(max(y))].set_color("#FFFFFF")
-
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_visible(False)
-    ax.spines['bottom'].set_color('#333')
-    ax.tick_params(axis='x', colors='#888', labelsize=8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(xlabels, fontweight="700")
-    ax.yaxis.grid(True, linestyle='--', alpha=0.08, color='#fff')
-    ax.tick_params(axis='y', labelsize=8, labelcolor="#666")
-    st.pyplot(fig, use_container_width=True)
-    plt.close(fig)
-
-
-# ============================================================
-# 8) COMPONENTES REUTILIZABLES
-# ============================================================
-def render_skeleton():
-    st.markdown("""
-        <div class="skeleton skeleton-card"></div>
-        <div style="display:flex;gap:10px;margin-top:12px;">
-          <div class="skeleton skeleton-pill"></div>
-          <div class="skeleton skeleton-pill"></div>
-          <div class="skeleton skeleton-pill"></div>
-          <div class="skeleton skeleton-pill"></div>
-        </div>
-        <br>
-        <div class="skeleton skeleton-row"></div>
-        <div class="skeleton skeleton-row"></div>
-        <div class="skeleton skeleton-row"></div>
-    """, unsafe_allow_html=True)
-
-
-def render_success_banner(cat: str, amount: float, desc: str):
-    icon = ICON_MAP.get(cat, "✅")
-    st.markdown(f"""
-        <div class="success-flash"></div>
-        <div class="success-banner">
-          <div class="success-icon">{icon}</div>
-          <div>
-            <div class="success-title">¡Gasto guardado!</div>
-            <div class="success-sub">{cat} · S/ {amount:,.2f} · {desc}</div>
-          </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-
-def render_mov_item(desc: str, subtitle: str, amt: float, gasto_id: str, key_prefix: str):
-    """Fila de movimiento con botón eliminar compacto."""
-    c_mov, c_del = st.columns([11, 1])
-    with c_mov:
-        st.markdown(f"""
-            <div class="mov-item">
-              <div class="mov-left">
-                <div class="mov-cat">{desc}</div>
-                <div class="mov-desc">{subtitle}</div>
-              </div>
-              <div class="mov-right">
-                <div class="mov-amt">S/ {amt:,.2f}</div>
-              </div>
-            </div>
-        """, unsafe_allow_html=True)
-    with c_del:
-        # Botón inline, solo visible si hay ID real
-        is_legacy = gasto_id.startswith("legacy_")
-        if not is_legacy:
-            st.markdown("<div style='margin-top:8px;'>", unsafe_allow_html=True)
-            if st.button("🗑", key=f"{key_prefix}_{gasto_id}", help="Eliminar gasto"):
-                st.session_state.confirm_delete = gasto_id
-                st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-
-
-def render_sort_bar():
-    c1, c2, c3, _ = st.columns([1.5, 2, 2, 4])
-    with c1:
-        st.markdown('<div class="sort-label">Ordenar:</div>', unsafe_allow_html=True)
-    with c2:
-        arrow = "↑" if st.session_state.sort_asc else "↓"
-        if st.button(
-            f"{arrow if st.session_state.sort_by == 'fecha' else '↕'} Fecha",
-            key="sort_f", use_container_width=True,
-            type="primary" if st.session_state.sort_by == "fecha" else "secondary",
-        ):
-            if st.session_state.sort_by == "fecha":
-                st.session_state.sort_asc = not st.session_state.sort_asc
-            else:
-                st.session_state.sort_by = "fecha"
-                st.session_state.sort_asc = False
-            st.rerun()
-    with c3:
-        if st.button(
-            f"{arrow if st.session_state.sort_by == 'monto' else '↕'} Monto",
-            key="sort_m", use_container_width=True,
-            type="primary" if st.session_state.sort_by == "monto" else "secondary",
-        ):
-            if st.session_state.sort_by == "monto":
-                st.session_state.sort_asc = not st.session_state.sort_asc
-            else:
-                st.session_state.sort_by = "monto"
-                st.session_state.sort_asc = False
-            st.rerun()
-
-
-# ============================================================
-# 9) VISTA PRINCIPAL
-# ============================================================
-def main_view():
-    # Skeleton en primera carga real
-    if not st.session_state.data_loaded:
-        ph = st.empty()
-        with ph.container():
-            render_skeleton()
-        df = load_data()
-        st.session_state.data_loaded = True
-        ph.empty()
-    else:
-        df = load_data()
-
-    now          = now_peru()
-    date_display = f"{DIAS_ORD[now.weekday()]}, {now.day} DE {MESES_ORD[now.month-1].upper()}"
-
-    # ── Banner éxito post-guardado ───────────────────────────
-    if st.session_state.show_success and st.session_state.preview_data:
-        pd_ = st.session_state.preview_data
-        render_success_banner(pd_.get("category",""), pd_.get("amount",0), pd_.get("description",""))
-        st.session_state.show_success = False
-        st.session_state.preview_data = None
-
-    # ── Header ──────────────────────────────────────────────
-    st.markdown(
-        f'<div class="badge"><span class="badge-dot"></span>{date_display}</div>'
-        f'<div class="greeting">Hola, Andrés 👋</div>',
-        unsafe_allow_html=True,
-    )
-    if st.button("➕  Nuevo gasto", type="primary", use_container_width=True, key="btn_nuevo_top"):
-        st.session_state.view = "add"
-        st.rerun()
-
-    st.write("")
-
-    # ── Navegación mes ───────────────────────────────────────
-    st.markdown(f"""
-        <div style="text-align:center;font-size:.98rem;font-weight:700;
-             color:#bbb;padding:8px 0 6px;letter-spacing:-.2px;">
-          {st.session_state.sel_month} {st.session_state.sel_year}
-        </div>
-    """, unsafe_allow_html=True)
-    cn1, cn2, cn3 = st.columns([2, 2, 1])
-    with cn1:
-        if st.button("‹  Anterior", key="pm", type="secondary", use_container_width=True):
-            prev_month(); st.rerun()
-    with cn2:
-        if st.button("Siguiente  ›", key="nm", type="secondary", use_container_width=True):
-            next_month(); st.rerun()
-    with cn3:
-        if st.button("📅", key="openpick", type="secondary", use_container_width=True):
-            st.session_state.show_picker = not st.session_state.get("show_picker", False)
-            st.rerun()
-
-    # Picker año+mes — aparece debajo cuando se abre
-    if st.session_state.get("show_picker", False):
-        with st.container():
-            # Selector de año
-            py1, py2, py3 = st.columns([1, 3, 1])
-            with py1:
-                if st.button("‹", key="py", type="secondary", use_container_width=True):
-                    st.session_state.sel_year -= 1; st.rerun()
-            with py2:
-                st.markdown(
-                    f"<div style='text-align:center;font-weight:900;font-size:1.1rem;padding-top:6px;'>{st.session_state.sel_year}</div>",
-                    unsafe_allow_html=True)
-            with py3:
-                if st.button("›", key="ny", type="secondary", use_container_width=True):
-                    st.session_state.sel_year += 1; st.rerun()
-
-            st.write("")
-            # Grid 3x4 de meses — siempre 3 columnas
-            abbrs = ["ENE","FEB","MAR","ABR","MAY","JUN","JUL","AGO","SEP","OCT","NOV","DIC"]
-            for row in [abbrs[i:i+3] for i in range(0, 12, 3)]:
-                cols = st.columns(3)
-                for i, abbr in enumerate(row):
-                    full = MESES_ORD[abbrs.index(abbr)]
-                    with cols[i]:
-                        t = "primary" if full == st.session_state.sel_month else "secondary"
-                        if st.button(abbr, key=f"mp_{abbr}", type=t, use_container_width=True):
-                            st.session_state.sel_month = full
-                            st.session_state.show_picker = False
-                            st.rerun()
-
-    mes_sel  = st.session_state.sel_month
-    anio_sel = st.session_state.sel_year
-    dfm      = filter_data(df, mes_sel, anio_sel)
-    total    = float(dfm["MONTO"].sum()) if not dfm.empty else 0.0
-    stats    = compute_stats(dfm, total)
-
-    # ── Cargar presupuesto persistente ──────────────────────
-    budgets = load_budgets()
-    presup  = budgets.get((anio_sel, mes_sel), 0.0)
-    presup_pct   = min(total / presup * 100, 100) if presup > 0 else 0
-    presup_color = (THEME["primary"] if presup_pct < 80
-                    else THEME["warning"] if presup_pct < 100
-                    else THEME["danger"])
-
-    st.markdown(f"""
-        <div class="card">
-          <div class="card-title">TOTAL GASTADO · {mes_sel.upper()}</div>
-          <div class="card-amount-wrap">
-            <span class="card-currency">S/</span>
-            <span class="card-amount">{total:,.2f}</span>
-          </div>
-          {"" if not presup else f'<div class="card-sub">de S/ {presup:,.0f} presupuestado · <span style="color:{"#00E054" if presup_pct < 80 else "#FFC700" if presup_pct < 100 else "#FF4B4B"}">{presup_pct:.0f}%</span></div>'}
-        </div>
-    """, unsafe_allow_html=True)
-
-    if presup > 0:
-        st.markdown(f"""
-            <div class="budget-wrap">
-              <div class="budget-bar-bg">
-                <div class="budget-bar-fill" style="width:{presup_pct:.1f}%;background:{presup_color};"></div>
-              </div>
-              <div class="budget-meta">
-                <span class="budget-spent">S/ {total:,.2f} gastado</span>
-                <span class="budget-remain" style="color:{presup_color};">S/ {max(presup-total,0):,.2f} restante</span>
-              </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    # ── Stats ────────────────────────────────────────────────
-    if stats:
-        streak     = days_with_expense_streak(df)
-        streak_cls = "streak" if streak > 0 else ""
-        st.markdown(f"""
-            <div class="stat-row">
-              <div class="stat-pill">
-                <div class="stat-label">Prom / día</div>
-                <div class="stat-value">S/ {stats['avg_day']:,.0f}</div>
-              </div>
-              <div class="stat-pill">
-                <div class="stat-label">Proyección</div>
-                <div class="stat-value">S/ {stats['proj']:,.0f}</div>
-              </div>
-              <div class="stat-pill">
-                <div class="stat-label">Movimientos</div>
-                <div class="stat-value">{stats['n_tx']}</div>
-              </div>
-              <div class="stat-pill">
-                <div class="stat-label">🔥 Racha</div>
-                <div class="stat-value {streak_cls}">{streak}d</div>
-              </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    # ── Alerta presupuesto ──────────────────────────────────
-    if presup > 0:
-        if presup_pct >= 100:
-            st.markdown(
-                f'<div class="budget-alert danger">🚨 Superaste el presupuesto de S/ {presup:,.0f} — llevas S/ {total:,.2f}</div>',
-                unsafe_allow_html=True,
-            )
-        elif presup_pct >= 80:
-            st.markdown(
-                f'<div class="budget-alert warn">⚠️ Ya usaste el {presup_pct:.0f}% — te quedan S/ {max(presup-total,0):,.2f}</div>',
-                unsafe_allow_html=True,
-            )
-
-    # ── Acciones secundarias — compactas ────────────────────
+    # Categorías agrupadas
+    cats = []
     if not dfm.empty:
-        st.markdown('<div class="section-title">ACCIONES</div>', unsafe_allow_html=True)
-        ca, cb, cc = st.columns([1, 1, 2])
-        with ca:
-            st.download_button(
-                "⬇️ CSV", data=export_csv(dfm),
-                file_name=f"gastos_{mes_sel}_{anio_sel}.csv",
-                mime="text/csv", type="secondary", use_container_width=True,
-            )
-        with cb:
-            lbl = "🎯 Presupuesto" if not st.session_state.budget_mode else "✕ Cerrar"
-            if st.button(lbl, type="secondary", use_container_width=True):
-                st.session_state.budget_mode = not st.session_state.budget_mode
-                st.rerun()
-
-    if st.session_state.budget_mode:
-        with st.expander("🎯 Presupuesto mensual", expanded=True):
-            bv = st.number_input(
-                f"Presupuesto para {mes_sel} {anio_sel} (S/)", min_value=0.0, step=50.0,
-                value=float(presup),
-            )
-            if st.button("Guardar presupuesto", type="primary"):
-                with st.spinner("Guardando en la nube…"):
-                    ok = save_budget(anio_sel, mes_sel, bv)
-                st.session_state.budget_mode = False
-                if ok:
-                    st.toast(f"Presupuesto S/ {bv:,.0f} guardado 🎯")
-                else:
-                    st.toast("⚠️ No se pudo guardar en Sheets — revisa la conexión")
-                st.rerun()
-
-
-    # ── Búsqueda ─────────────────────────────────────────────
-    if not dfm.empty:
-        st.markdown('<div class="section-title">BUSCAR</div>', unsafe_allow_html=True)
-        sq = st.text_input("", value=st.session_state.search_query,
-                           placeholder="Buscar por descripción o categoría…",
-                           label_visibility="collapsed")
-        st.session_state.search_query = sq
-        if sq:
-            mask = (
-                dfm["DESCRIPCION"].str.contains(sq, case=False, na=False) |
-                dfm["CATEGORÍA"].str.contains(sq, case=False, na=False)
-            )
-            dfm = dfm[mask]
-
-    # ── Sin datos ─────────────────────────────────────────────
-    if dfm.empty or total <= 0:
-        st.markdown("""
-            <div class="empty-state">
-              <div class="empty-icon">🪴</div>
-              <div class="empty-title">Sin gastos este mes</div>
-              <div class="empty-sub">Presiona "➕ Nuevo gasto" para empezar.</div>
-            </div>
-        """, unsafe_allow_html=True)
-        return
-
-    # ── Distribución ─────────────────────────────────────────
-    grp = (dfm.groupby("CATEGORÍA")["MONTO"].sum()
-              .reset_index()
-              .sort_values("MONTO", ascending=False))
-    grp["PCT"] = grp["MONTO"] / total * 100
-
-    # ── Tabs distribución — compactos ───────────────────────
-    st.markdown('<div class="section-title">DISTRIBUCIÓN</div>', unsafe_allow_html=True)
-    cv1, cv2, cv3 = st.columns([1, 1, 1])
-    with cv1:
-        if st.button("Categorías", key="vc",
-                     type="primary" if st.session_state.chart_mode == "Categorías" else "secondary",
-                     use_container_width=True):
-            st.session_state.chart_mode = "Categorías"; st.rerun()
-    with cv2:
-        if st.button("Histórico", key="vh",
-                     type="primary" if st.session_state.chart_mode == "Histórico" else "secondary",
-                     use_container_width=True):
-            st.session_state.chart_mode = "Histórico"; st.rerun()
-    with cv3:
-        pass
-
-    st.write("")
-
-    # ── Vista CATEGORÍAS ─────────────────────────────────────
-    if st.session_state.chart_mode == "Categorías":
-        top = grp.iloc[0]
-        cc, cl = st.columns([1, 1], vertical_alignment="center")
-        with cc:
-            render_donut(grp, top["CATEGORÍA"], float(top["PCT"]))
-        with cl:
-            for _, r in grp.iterrows():
-                color = COLORS_MAP.get(r["CATEGORÍA"], "#888")
-                st.markdown(f"""
-                    <div class="legend-row">
-                      <div class="legend-left">
-                        <div class="legend-dot" style="background:{color};box-shadow:0 0 6px {color};"></div>
-                        <div class="legend-name">{r['CATEGORÍA']}</div>
-                      </div>
-                      <div class="legend-pct">{int(float(r['PCT'])+.5)}%</div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-        st.write("")
-        st.markdown('<div class="section-title">DETALLE POR CATEGORÍA</div>', unsafe_allow_html=True)
-        render_sort_bar()
-
+        grp = (dfm.groupby("CATEGORÍA")["MONTO"].sum()
+                  .reset_index().sort_values("MONTO", ascending=False))
+        grp["PCT"] = grp["MONTO"] / total * 100 if total > 0 else 0
         for _, r in grp.iterrows():
-            cat     = r["CATEGORÍA"]
-            amt     = float(r["MONTO"])
-            pct     = float(r["PCT"])
-            color   = COLORS_MAP.get(cat, "#888")
-            icon    = ICON_MAP.get(cat, "•")
-            details = apply_sort(dfm[dfm["CATEGORÍA"] == cat])
+            cat  = r["CATEGORÍA"]
+            icon, color = CATEGORIES.get(cat, ("📦","#888"))
+            cats.append({
+                "cat": cat, "icon": icon, "color": color,
+                "amt": round(float(r["MONTO"]),2),
+                "pct": round(float(r["PCT"]),1),
+            })
 
-            with st.expander(f"{icon}  {cat}", expanded=(st.session_state.expanded_cat == cat)):
-                st.markdown(f"""
-                    <div class="rich-card">
-                      <div class="rich-header">
-                        <div class="rich-left">
-                          <div class="rich-cat">{cat}</div>
-                          <div class="rich-sub">{len(details)} MOVIMIENTOS</div>
-                        </div>
-                        <div class="rich-right">
-                          <div class="rich-amt">S/ {amt:,.2f}</div>
-                          <div class="rich-pct" style="color:{color};">{int(pct+.5)}%</div>
-                        </div>
-                      </div>
-                      <div class="rich-bar-bg">
-                        <div class="rich-bar-fill" style="width:{pct}%;background:{color};"></div>
-                      </div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                for _, d in details.iterrows():
-                    dstr = d["FECHA"].strftime("%d/%m") if pd.notna(d["FECHA"]) else ""
-                    desc = str(d.get("DESCRIPCION","")).strip() or cat
-                    render_mov_item(desc, dstr, float(d.get("MONTO",0)),
-                                    str(d.get("ID","")), f"c_{cat[:3]}")
-
-    # ── Vista HISTÓRICO ──────────────────────────────────────
-    else:
-        ch1, ch2, ch3, _ = st.columns([1.5,1.5,1.5,2.5])
-        for label, col in [("Diario",ch1),("Semanal",ch2),("Mensual",ch3)]:
-            with col:
-                if st.button(label, key=f"hm_{label}",
-                             type="primary" if st.session_state.hist_mode == label else "secondary",
-                             use_container_width=True):
-                    st.session_state.hist_mode = label; st.rerun()
-
-        st.write("")
-        chart_df = filter_data(df, None, anio_sel) if st.session_state.hist_mode == "Mensual" else dfm
-        render_history_chart(chart_df, st.session_state.hist_mode)
-
-        st.markdown('<div class="section-title">MOVIMIENTOS</div>', unsafe_allow_html=True)
-        render_sort_bar()
-        for _, d in apply_sort(dfm).iterrows():
+    # Movimientos del mes (ordenados)
+    movs = []
+    if not dfm.empty:
+        col = "FECHA" if st.session_state.sort_by == "fecha" else "MONTO"
+        for _, d in dfm.sort_values(col, ascending=st.session_state.sort_asc).iterrows():
             cat  = d["CATEGORÍA"]
-            dstr = d["FECHA"].strftime("%d/%m") if pd.notna(d["FECHA"]) else ""
-            desc = str(d.get("DESCRIPCION","")).strip() or cat
-            render_mov_item(desc, f"{cat} · {dstr}", float(d.get("MONTO",0)),
-                            str(d.get("ID","")), "h")
+            icon, color = CATEGORIES.get(cat, ("📦","#888"))
+            fecha_str = d["FECHA"].strftime("%d/%m") if pd.notna(d["FECHA"]) else ""
+            movs.append({
+                "id":    str(d.get("ID","")),
+                "desc":  str(d.get("DESCRIPCION","")).strip() or cat,
+                "cat":   cat, "icon": icon, "color": color,
+                "amt":   round(float(d.get("MONTO",0)),2),
+                "fecha": fecha_str,
+                "legacy": str(d.get("ID","")).startswith("legacy_"),
+            })
 
-    # ── Confirm delete ───────────────────────────────────────
-    if st.session_state.confirm_delete:
-        gid = st.session_state.confirm_delete
+    # Histórico mensual del año
+    hist = []
+    df_year = filter_data(df, None, anio)
+    if not df_year.empty:
+        for m_idx, m_name in enumerate(MESES_ORD):
+            dfm2 = df_year[df_year["MES"] == m_name]
+            hist.append({"mes": m_name[:3].upper(), "total": round(float(dfm2["MONTO"].sum()),2)})
 
-        @st.dialog("Confirmar eliminación")
-        def confirm_dialog():
-            st.markdown("¿Seguro que quieres **eliminar** este gasto?\nEsta acción no se puede deshacer.")
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("Cancelar", type="secondary", use_container_width=True):
-                    st.session_state.confirm_delete = None; st.rerun()
-            with c2:
-                if st.button("Eliminar", type="primary", use_container_width=True):
-                    ok, err = delete_from_sheet(gid)
-                    st.session_state.confirm_delete = None
-                    st.toast("Eliminado 🗑️" if ok else f"Error: {err}")
-                    st.rerun()
-        confirm_dialog()
-
+    return {
+        "mes":    mes,
+        "anio":   anio,
+        "total":  round(total, 2),
+        "presup": round(presup, 2),
+        "avg_day": round(avg_day, 2),
+        "proj":   round(avg_day * 30, 2),
+        "n_tx":   len(dfm),
+        "streak": streak,
+        "cats":   cats,
+        "movs":   movs,
+        "hist":   hist,
+        "meses":  MESES_ORD,
+        "categories": [
+            {"key": k, "icon": v[0], "color": v[1], "short": k.split()[0][:8]}
+            for k, v in CATEGORIES.items()
+        ],
+        "now_day":  now_p.day,
+        "now_dow":  DIAS_ORD[now_p.weekday()],
+        "now_mes":  MESES_ORD[now_p.month-1].upper(),
+        "sort_by":  st.session_state.sort_by,
+        "sort_asc": st.session_state.sort_asc,
+        "view":     st.session_state.view,
+        "show_success": st.session_state.show_success,
+        "last_saved":   st.session_state.last_saved,
+        "toast":    st.session_state.toast_msg,
+    }
 
 # ============================================================
-# 10) VISTA AÑADIR (con pantalla de preview)
+# 5) HANDLE ACTIONS (JS → Python via query_params)
 # ============================================================
-def add_view():
-    # ── Preview / confirmación ───────────────────────────────
-    if st.session_state.preview_data:
-        pd_   = st.session_state.preview_data
-        cat   = pd_["category"]
-        amt   = pd_["amount"]
-        desc  = pd_["description"]
-        fecha = pd_["date"]
-        color = COLORS_MAP.get(cat, "#888")
-        icon  = ICON_MAP.get(cat, "•")
-
-        cb, ct, _ = st.columns([1.2, 6, 1.2], vertical_alignment="center")
-        with cb:
-            if st.button("←", type="secondary"):
-                st.session_state.preview_data = None; st.rerun()
-        with ct:
-            st.markdown("<div style='text-align:center;font-size:1.5rem;font-weight:900;'>Confirmar gasto</div>",
-                        unsafe_allow_html=True)
-
-        st.write("")
-        st.markdown(f"""
-            <div class="preview-card">
-              <div class="preview-row">
-                <span class="preview-label">Categoría</span>
-                <span class="preview-value">{icon} {cat}</span>
-              </div>
-              <div class="preview-row">
-                <span class="preview-label">Descripción</span>
-                <span class="preview-value">{desc}</span>
-              </div>
-              <div class="preview-row">
-                <span class="preview-label">Fecha</span>
-                <span class="preview-value">{fecha.strftime('%d/%m/%Y')}</span>
-              </div>
-              <div class="preview-row">
-                <span class="preview-label">Monto</span>
-                <span class="preview-amount" style="color:{color};">S/ {amt:,.2f}</span>
-              </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("✏️ Editar", type="secondary", use_container_width=True):
-                st.session_state.preview_data = None; st.rerun()
-        with c2:
-            if st.button("✅ Confirmar y guardar", type="primary", use_container_width=True):
-                with st.spinner("Guardando…"):
-                    ok, msg = save_to_sheet(pd_)
-                if ok:
-                    st.session_state.show_success = True
-                    st.session_state.view = "main"
-                    st.rerun()
-                else:
-                    st.error(f"❌ Error: {msg}")
+def handle_actions():
+    params = st.query_params
+    action = params.get("action", "")
+    if not action:
         return
 
-    # ── Formulario ───────────────────────────────────────────
-    # Header con botón volver
-    cb, ct, _ = st.columns([1, 5, 1], vertical_alignment="center")
-    with cb:
-        if st.button("←", type="secondary", use_container_width=True):
-            st.session_state.view = "main"; st.rerun()
-    with ct:
-        st.markdown(
-            "<div style='text-align:center;font-size:1rem;font-weight:700;color:#666;letter-spacing:-.2px;'>Nuevo Gasto</div>",
-            unsafe_allow_html=True)
+    # Clear params immediately
+    st.query_params.clear()
 
-    # ── Monto ────────────────────────────────────────────────
-    st.markdown("""
-        <div style='text-align:center;font-size:.63rem;font-weight:600;color:#242424;
-             letter-spacing:3px;text-transform:uppercase;margin:20px 0 10px;'>MONTO</div>
-    """, unsafe_allow_html=True)
+    if action == "prev_month":
+        idx = MESES_ORD.index(st.session_state.sel_month)
+        if idx == 0:
+            st.session_state.sel_month = MESES_ORD[11]; st.session_state.sel_year -= 1
+        else:
+            st.session_state.sel_month = MESES_ORD[idx-1]
 
-    monto_str = st.text_input(
-        "Monto", value="0",
-        label_visibility="collapsed",
-        placeholder="0.00",
-        key="monto_input"
-    )
-    # Parse monto safely
-    try:
-        monto = max(0.0, float(monto_str.replace(",", ".")))
-    except (ValueError, AttributeError):
-        monto = 0.0
+    elif action == "next_month":
+        idx = MESES_ORD.index(st.session_state.sel_month)
+        if idx == 11:
+            st.session_state.sel_month = MESES_ORD[0]; st.session_state.sel_year += 1
+        else:
+            st.session_state.sel_month = MESES_ORD[idx+1]
 
-    st.markdown(
-        f"<div style='text-align:center;color:#252525;font-size:.72rem;font-weight:600;"
-        f"letter-spacing:2px;text-transform:uppercase;margin-top:4px;margin-bottom:20px;'>SOLES</div>",
-        unsafe_allow_html=True)
+    elif action == "set_month":
+        m = params.get("m",""); y = params.get("y","")
+        if m in MESES_ORD: st.session_state.sel_month = m
+        try: st.session_state.sel_year = int(y)
+        except: pass
 
-    # ── Categoría ────────────────────────────────────────────
-    st.markdown("""
-        <div style='text-align:center;font-size:.63rem;font-weight:600;color:#242424;
-             letter-spacing:3px;text-transform:uppercase;margin-bottom:10px;'>CATEGORÍA</div>
-    """, unsafe_allow_html=True)
+    elif action == "goto_add":
+        st.session_state.view = "add"
+        st.session_state.show_success = False
 
-    CAT_SHORT = {
-        "Alimentación": "🍽️ Comida",   "Transporte": "🚗 Transporte",
-        "Salud":        "💊 Salud",      "Trabajo":    "💼 Trabajo",
-        "Ocio":         "🎵 Ocio",       "Casa":       "🏠 Casa",
-        "Inversión":    "📈 Inversión",  "Pareja":     "❤️ Pareja",
-        "Estudios":     "📚 Estudios",   "Viaje":      "✈️ Viaje",
-        "Frutas":       "🍎 Frutas",     "Golosinas":  "🍬 Dulces",
-        "Compras Generales": "🛒 Compras", "Otros":    "📦 Otros",
-    }
-    cats_display = list(CAT_SHORT.values())
-    cats_keys    = list(CAT_SHORT.keys())
-    cat_sel_disp = st.radio("Cat", cats_display, horizontal=True, label_visibility="collapsed")
-    cat_clean    = cats_keys[cats_display.index(cat_sel_disp)] if cat_sel_disp in cats_display else "Otros"
-    if cat_clean not in VALID_CATS:
-        cat_clean = "Otros"
+    elif action == "goto_main":
+        st.session_state.view = "main"
 
-    # ── Fecha ────────────────────────────────────────────────
-    st.markdown("""
-        <div style='text-align:center;font-size:.63rem;font-weight:600;color:#242424;
-             letter-spacing:3px;text-transform:uppercase;margin:20px 0 8px;'>FECHA</div>
-    """, unsafe_allow_html=True)
-    fecha = st.date_input("Fecha", value=now_peru().date(), label_visibility="collapsed")
+    elif action == "sort":
+        by = params.get("by","fecha")
+        if st.session_state.sort_by == by:
+            st.session_state.sort_asc = not st.session_state.sort_asc
+        else:
+            st.session_state.sort_by = by; st.session_state.sort_asc = False
 
-    # ── Nota ─────────────────────────────────────────────────
-    st.markdown("""
-        <div style='text-align:center;font-size:.63rem;font-weight:600;color:#242424;
-             letter-spacing:3px;text-transform:uppercase;margin:16px 0 8px;'>NOTA</div>
-    """, unsafe_allow_html=True)
-    nota = st.text_input("Nota", placeholder="Descripción (opcional)…", label_visibility="collapsed")
+    elif action == "save_expense":
+        try:
+            amt   = float(params.get("amt","0"))
+            cat   = params.get("cat","Otros")
+            desc  = params.get("desc","") or cat
+            fecha_str = params.get("fecha","")
+            if fecha_str:
+                fecha = dt.datetime.strptime(fecha_str, "%Y-%m-%d")
+            else:
+                fecha = now_peru().replace(tzinfo=None)
+            ok, msg = save_to_sheet({"date": fecha, "amount": amt, "category": cat, "description": desc})
+            if ok:
+                st.session_state.show_success = True
+                st.session_state.last_saved   = {"cat": cat, "amt": amt, "desc": desc,
+                                                   "icon": CATEGORIES.get(cat,("📦","#888"))[0]}
+                st.session_state.view = "main"
+                st.session_state.toast_msg = f"Guardado ✓"
+            else:
+                st.session_state.toast_msg = f"Error: {msg}"
+        except Exception as e:
+            st.session_state.toast_msg = f"Error: {e}"
 
-    st.write("")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Cancelar", type="secondary", use_container_width=True):
-            st.session_state.view = "main"; st.rerun()
-    with c2:
-        if st.button("Revisar →", type="primary", disabled=(monto <= 0), use_container_width=True):
-            st.session_state.preview_data = {
-                "date":        dt.datetime.combine(fecha, dt.time()),
-                "amount":      float(monto),
-                "category":    cat_clean,
-                "description": nota.strip() or cat_clean,
-            }
-            st.rerun()
+    elif action == "delete":
+        gid = params.get("id","")
+        ok, msg = delete_from_sheet(gid)
+        st.session_state.toast_msg = "Eliminado 🗑️" if ok else f"Error: {msg}"
 
+    elif action == "save_budget":
+        try:
+            mes = params.get("mes", st.session_state.sel_month)
+            anio = int(params.get("anio", st.session_state.sel_year))
+            val  = float(params.get("val","0"))
+            ok   = save_budget(anio, mes, val)
+            st.session_state.toast_msg = f"Presupuesto S/ {val:,.0f} guardado 🎯" if ok else "Error guardando"
+        except Exception as e:
+            st.session_state.toast_msg = f"Error: {e}"
+
+    elif action == "clear_toast":
+        st.session_state.toast_msg = None
+
+    elif action == "clear_success":
+        st.session_state.show_success = False
+        st.session_state.last_saved   = None
+
+    st.rerun()
 
 # ============================================================
-# 11) ENTRY POINT
+# 6) HTML FRONTEND
 # ============================================================
-inject_css()
+def render_app(payload: dict):
+    data_json = json.dumps(payload, ensure_ascii=False, default=str)
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+<style>
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}}
+:root{{
+  --bg:       #040404;
+  --s1:       #0c0c0c;
+  --s2:       #141414;
+  --s3:       #1c1c1c;
+  --border:   #1e1e1e;
+  --border2:  #282828;
+  --green:    #00E054;
+  --green-dim:#00a83f;
+  --text:     #e8e8e8;
+  --muted:    #555;
+  --muted2:   #333;
+  --danger:   #e84040;
+  --warn:     #c99500;
+  --font:     'Syne', sans-serif;
+  --mono:     'DM Mono', monospace;
+  --r-sm:     10px;
+  --r-md:     16px;
+  --r-lg:     22px;
+  --r-xl:     28px;
+}}
+html,body{{background:var(--bg);color:var(--text);font-family:var(--font);
+  min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased;}}
+#app{{max-width:480px;margin:0 auto;padding:0 16px;
+  padding-top:env(safe-area-inset-top);
+  padding-bottom:calc(env(safe-area-inset-bottom) + 90px);
+  min-height:100vh;}}
 
-# Forzar teclado numérico en iPhone para campos de monto
-st.markdown("""
+/* ── BUTTONS ── */
+.btn{{display:flex;align-items:center;justify-content:center;gap:8px;
+  border:none;border-radius:var(--r-md);font-family:var(--font);
+  font-weight:700;cursor:pointer;transition:all .13s ease;
+  -webkit-appearance:none;outline:none;}}
+.btn-primary{{background:var(--green);color:#000;font-size:.95rem;
+  height:52px;width:100%;letter-spacing:-.1px;}}
+.btn-primary:active{{transform:scale(.97);filter:brightness(.92);}}
+.btn-secondary{{background:var(--s1);border:1px solid var(--border);
+  color:var(--muted);font-size:.82rem;height:40px;}}
+.btn-secondary:active{{background:var(--s2);color:var(--text);}}
+.btn-icon{{background:var(--s1);border:1px solid var(--border);
+  color:var(--muted);width:40px;height:40px;border-radius:var(--r-sm);
+  flex-shrink:0;font-size:1rem;}}
+.btn-icon:active{{background:var(--s2);}}
+.btn-danger{{background:rgba(232,64,64,.1);border:1px solid rgba(232,64,64,.25);
+  color:var(--danger);width:36px;height:36px;border-radius:var(--r-sm);
+  flex-shrink:0;font-size:.85rem;}}
+
+/* ── BADGES / CHIPS ── */
+.badge{{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
+  border-radius:999px;background:var(--s1);border:1px solid var(--border);
+  color:var(--muted2);font-size:.65rem;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;}}
+.dot{{width:5px;height:5px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 6px var(--green);flex-shrink:0;}}
+.section-label{{color:var(--muted2);font-size:.6rem;font-weight:600;
+  letter-spacing:3px;text-transform:uppercase;margin:20px 0 8px;}}
+
+/* ── CARD HERO ── */
+.card-hero{{background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r-xl);padding:28px 22px 22px;
+  position:relative;overflow:hidden;margin:8px 0;
+  display:flex;flex-direction:column;align-items:center;}}
+.card-hero::before{{content:'';position:absolute;top:0;left:50%;
+  transform:translateX(-50%);width:40%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(0,224,84,.2),transparent);}}
+.card-title{{color:var(--muted2);font-size:.62rem;font-weight:600;
+  letter-spacing:3px;text-transform:uppercase;margin-bottom:10px;}}
+.card-amount{{display:flex;align-items:baseline;gap:6px;}}
+.card-currency{{font-size:1.1rem;font-weight:600;color:var(--muted2);font-family:var(--mono);}}
+.card-num{{font-size:clamp(2.8rem,10vw,4rem);font-weight:800;color:#fff;
+  font-family:var(--mono);letter-spacing:-2px;line-height:1;}}
+.card-sub{{color:var(--muted2);font-size:.72rem;font-weight:500;margin-top:8px;}}
+.card-sub b{{color:#2d7a50;font-weight:700;}}
+
+/* ── BUDGET BAR ── */
+.budget-wrap{{margin-top:10px;width:100%;}}
+.budget-bar-bg{{width:100%;height:3px;background:var(--s3);border-radius:99px;overflow:hidden;}}
+.budget-bar-fill{{height:100%;border-radius:99px;transition:width .8s cubic-bezier(.4,0,.2,1);}}
+.budget-meta{{display:flex;justify-content:space-between;margin-top:5px;}}
+.budget-meta span{{font-size:.68rem;font-weight:500;color:var(--muted2);}}
+.budget-meta b{{font-weight:600;}}
+
+/* ── STAT PILLS ── */
+.stat-grid{{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;}}
+.stat-pill{{background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r-lg);padding:13px 14px 11px;display:flex;flex-direction:column;gap:5px;}}
+.stat-lbl{{color:var(--muted2);font-size:.6rem;font-weight:600;letter-spacing:2px;text-transform:uppercase;}}
+.stat-val{{color:#c8c8c8;font-size:1rem;font-weight:700;font-family:var(--mono);letter-spacing:-.4px;}}
+.stat-val.green{{color:var(--green);font-size:1.1rem;}}
+
+/* ── BUDGET ALERT ── */
+.budget-alert{{border-radius:var(--r-sm);padding:10px 13px;margin-top:9px;
+  font-weight:600;font-size:.8rem;display:flex;align-items:center;gap:8px;
+  animation:fadeUp .25s ease;}}
+.budget-alert.warn{{background:rgba(200,140,0,.06);border:1px solid rgba(200,140,0,.15);color:var(--warn);}}
+.budget-alert.danger{{background:rgba(200,50,50,.06);border:1px solid rgba(200,50,50,.18);color:var(--danger);}}
+
+/* ── MONTH NAV ── */
+.month-nav{{display:flex;align-items:center;gap:8px;margin:8px 0 6px;}}
+.month-nav-label{{flex:1;text-align:center;font-size:.95rem;font-weight:700;color:var(--text);}}
+.month-nav .btn-icon{{font-size:1.1rem;}}
+
+/* ── SEARCH ── */
+.search-wrap{{position:relative;margin:4px 0 8px;}}
+.search-input{{width:100%;background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r-md);padding:11px 16px 11px 38px;
+  color:var(--text);font-size:.88rem;font-family:var(--font);outline:none;
+  transition:border-color .15s;}}
+.search-input:focus{{border-color:rgba(0,224,84,.3);}}
+.search-input::placeholder{{color:var(--muted2);}}
+.search-icon{{position:absolute;left:13px;top:50%;transform:translateY(-50%);
+  color:var(--muted2);font-size:.9rem;pointer-events:none;}}
+
+/* ── TABS ── */
+.tabs{{display:flex;gap:6px;margin:4px 0 12px;}}
+.tab{{flex:1;height:38px;border-radius:var(--r-sm);font-size:.82rem;font-weight:700;
+  cursor:pointer;border:1px solid var(--border);background:var(--s1);color:var(--muted);
+  display:flex;align-items:center;justify-content:center;transition:all .12s;}}
+.tab.active{{background:var(--green);color:#000;border-color:var(--green);}}
+.tab:active{{transform:scale(.97);}}
+
+/* ── SORT BAR ── */
+.sort-bar{{display:flex;align-items:center;gap:8px;margin-bottom:8px;}}
+.sort-lbl{{color:var(--muted2);font-size:.6rem;font-weight:600;letter-spacing:2px;text-transform:uppercase;}}
+.sort-btn{{height:32px;padding:0 12px;border-radius:8px;font-size:.75rem;font-weight:700;
+  cursor:pointer;border:1px solid var(--border);background:var(--s1);color:var(--muted);
+  display:flex;align-items:center;gap:4px;transition:all .12s;}}
+.sort-btn.active{{background:rgba(0,224,84,.1);border-color:rgba(0,224,84,.3);color:var(--green);}}
+.sort-btn:active{{transform:scale(.96);}}
+
+/* ── MOVIMIENTOS ── */
+.mov-list{{display:flex;flex-direction:column;gap:5px;}}
+.mov-item{{background:var(--s1);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:13px 14px;display:flex;align-items:center;gap:12px;
+  transition:border-color .12s;}}
+.mov-item:active{{border-color:var(--border2);background:var(--s2);}}
+.mov-icon-wrap{{width:36px;height:36px;border-radius:10px;background:var(--s2);
+  display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;}}
+.mov-info{{flex:1;min-width:0;}}
+.mov-name{{font-size:.88rem;font-weight:700;color:#ccc;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}}
+.mov-sub{{font-size:.72rem;color:var(--muted2);margin-top:2px;}}
+.mov-right{{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}}
+.mov-amt{{font-size:.9rem;font-weight:700;font-family:var(--mono);letter-spacing:-.3px;}}
+.mov-date{{font-size:.65rem;color:var(--muted2);}}
+
+/* ── DONUT ── */
+.donut-wrap{{display:flex;align-items:center;gap:16px;margin:8px 0 16px;}}
+.donut-legend{{flex:1;display:flex;flex-direction:column;gap:0;}}
+.legend-row{{display:flex;align-items:center;justify-content:space-between;
+  padding:8px 0;border-bottom:1px solid var(--border);}}
+.legend-row:last-child{{border-bottom:none;}}
+.legend-left{{display:flex;align-items:center;gap:8px;}}
+.legend-dot{{width:6px;height:6px;border-radius:50%;flex-shrink:0;}}
+.legend-name{{font-size:.82rem;font-weight:600;color:#888;}}
+.legend-pct{{font-size:.78rem;font-weight:600;color:var(--muted2);font-family:var(--mono);}}
+
+/* ── EXPANDER (categoría detalle) ── */
+.cat-expander{{background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r-lg);overflow:hidden;margin-bottom:5px;}}
+.cat-header{{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;
+  transition:background .12s;}}
+.cat-header:active{{background:var(--s2);}}
+.cat-icon{{width:34px;height:34px;border-radius:9px;background:var(--s2);
+  display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;}}
+.cat-info{{flex:1;}}
+.cat-name{{font-size:.88rem;font-weight:700;color:#bbb;}}
+.cat-sub{{font-size:.68rem;color:var(--muted2);margin-top:1px;}}
+.cat-right{{display:flex;flex-direction:column;align-items:flex-end;gap:2px;}}
+.cat-amt{{font-size:.95rem;font-weight:700;font-family:var(--mono);color:#ddd;letter-spacing:-.5px;}}
+.cat-pct{{font-size:.7rem;font-weight:700;}}
+.cat-chevron{{color:var(--muted2);font-size:.75rem;transition:transform .2s;margin-left:4px;}}
+.cat-chevron.open{{transform:rotate(90deg);}}
+.cat-bar-bg{{height:2px;background:var(--s3);margin:0 16px;border-radius:99px;overflow:hidden;}}
+.cat-bar-fill{{height:100%;border-radius:99px;}}
+.cat-body{{padding:0 14px 12px;display:flex;flex-direction:column;gap:5px;}}
+.cat-body.hidden{{display:none;}}
+
+/* ── HIST CHART ── */
+.hist-bars{{display:flex;align-items:flex-end;gap:4px;height:80px;margin:8px 0 4px;}}
+.hist-bar-wrap{{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;}}
+.hist-bar{{width:100%;border-radius:4px 4px 0 0;background:var(--s3);
+  transition:height .4s ease;min-height:3px;}}
+.hist-bar.current{{background:var(--green);opacity:.85;}}
+.hist-bar.has-val{{background:var(--s3);opacity:1;}}
+.hist-label{{font-size:.55rem;color:var(--muted2);font-weight:600;letter-spacing:.5px;}}
+
+/* ── FORM NUEVO GASTO ── */
+.form-header{{display:flex;align-items:center;gap:12px;padding:12px 0 16px;}}
+.form-title{{flex:1;text-align:center;font-size:.9rem;font-weight:700;color:var(--muted);}}
+.amount-display{{background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r-xl);padding:24px 20px 16px;text-align:center;
+  margin-bottom:6px;position:relative;overflow:hidden;cursor:text;}}
+.amount-display::before{{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+  width:30%;height:1px;background:linear-gradient(90deg,transparent,rgba(0,224,84,.15),transparent);}}
+.amount-field-lbl{{font-size:.6rem;font-weight:600;color:var(--muted2);
+  letter-spacing:3px;text-transform:uppercase;margin-bottom:4px;}}
+.amount-value{{font-size:clamp(2.8rem,11vw,4.5rem);font-weight:800;
+  font-family:var(--mono);letter-spacing:-3px;color:#fff;line-height:1;
+  min-height:1.2em;}}
+.amount-value.zero{{color:var(--muted2);}}
+.amount-unit{{font-size:.65rem;font-weight:600;color:var(--muted2);
+  letter-spacing:2px;text-transform:uppercase;margin-top:6px;}}
+.amount-input-hidden{{position:absolute;opacity:0;pointer-events:none;
+  width:1px;height:1px;}}
+.cat-grid{{display:grid;grid-template-columns:1fr 1fr;gap:7px;}}
+.cat-chip{{background:var(--s1);border:1px solid var(--border2);
+  border-radius:var(--r-md);padding:12px 10px;
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  cursor:pointer;transition:all .12s;min-height:48px;}}
+.cat-chip:active{{transform:scale(.96);}}
+.cat-chip.selected{{background:rgba(0,224,84,.1);border-color:rgba(0,224,84,.3);}}
+.cat-chip span.lbl{{font-size:.82rem;font-weight:700;color:var(--muted);transition:color .12s;}}
+.cat-chip.selected span.lbl{{color:var(--green);}}
+.cat-chip span.ico{{font-size:1.1rem;}}
+.form-field{{margin-top:16px;}}
+.form-field-lbl{{font-size:.6rem;font-weight:600;color:var(--muted2);
+  letter-spacing:3px;text-transform:uppercase;text-align:center;margin-bottom:8px;}}
+.form-input{{width:100%;background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r-md);padding:13px 16px;color:var(--text);
+  font-size:.9rem;font-family:var(--font);outline:none;
+  transition:border-color .15s;}}
+.form-input:focus{{border-color:rgba(0,224,84,.3);}}
+.form-input::placeholder{{color:var(--muted2);}}
+.form-actions{{display:flex;gap:8px;margin-top:20px;}}
+.form-actions .btn-primary{{flex:2;}}
+.form-actions .btn-secondary{{flex:1;}}
+
+/* ── PREVIEW ── */
+.preview-card{{background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r-xl);padding:20px;margin:14px 0;}}
+.preview-amount{{text-align:center;font-size:clamp(2.2rem,7vw,3rem);
+  font-weight:800;font-family:var(--mono);letter-spacing:-2px;margin-bottom:18px;}}
+.preview-row{{display:flex;justify-content:space-between;align-items:center;
+  padding:9px 0;border-bottom:1px solid var(--border);}}
+.preview-row:last-child{{border-bottom:none;}}
+.preview-lbl{{font-size:.62rem;font-weight:600;color:var(--muted2);
+  text-transform:uppercase;letter-spacing:1.5px;}}
+.preview-val{{font-size:.86rem;font-weight:600;color:#888;}}
+
+/* ── SUCCESS BANNER ── */
+.success-banner{{background:#090e0b;border:1px solid #162018;
+  border-radius:var(--r-lg);padding:14px 16px;
+  display:flex;align-items:center;gap:12px;margin-bottom:12px;
+  animation:fadeUp .35s ease;}}
+.success-icon{{font-size:1.6rem;}}
+.success-text .t{{font-weight:700;color:var(--green);font-size:.88rem;margin-bottom:2px;}}
+.success-text .s{{font-size:.75rem;color:#1e4a2e;font-weight:500;}}
+
+/* ── MONTH PICKER ── */
+.month-picker{{background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r-lg);padding:14px;margin-bottom:8px;
+  animation:fadeUp .2s ease;}}
+.year-nav{{display:flex;align-items:center;gap:8px;margin-bottom:10px;}}
+.year-label{{flex:1;text-align:center;font-size:.9rem;font-weight:700;color:var(--text);}}
+.month-grid-picker{{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}}
+.month-chip-picker{{height:36px;border-radius:8px;background:var(--s2);border:1px solid var(--border);
+  color:var(--muted);font-size:.78rem;font-weight:700;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .12s;}}
+.month-chip-picker.active{{background:var(--green);color:#000;border-color:var(--green);}}
+.month-chip-picker:active{{transform:scale(.95);}}
+
+/* ── PRESUPUESTO FORM ── */
+.budget-form{{background:var(--s1);border:1px solid var(--border);
+  border-radius:var(--r-lg);padding:16px;margin-bottom:8px;
+  animation:fadeUp .2s ease;}}
+.budget-form-title{{font-size:.75rem;font-weight:700;color:#888;margin-bottom:10px;text-align:center;}}
+.budget-input-row{{display:flex;gap:8px;align-items:center;}}
+.budget-input{{flex:1;background:var(--s2);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:10px 14px;color:#fff;font-size:1rem;
+  font-family:var(--mono);font-weight:700;outline:none;text-align:center;
+  transition:border-color .15s;}}
+.budget-input:focus{{border-color:rgba(0,224,84,.3);}}
+.budget-save-btn{{background:var(--green);color:#000;font-weight:700;
+  height:42px;padding:0 16px;border:none;border-radius:var(--r-sm);
+  font-size:.85rem;cursor:pointer;white-space:nowrap;transition:all .13s;}}
+.budget-save-btn:active{{transform:scale(.97);}}
+
+/* ── TOAST ── */
+.toast{{position:fixed;bottom:calc(env(safe-area-inset-bottom)+16px);left:50%;
+  transform:translateX(-50%);background:#111;border:1px solid var(--border2);
+  border-radius:var(--r-md);padding:10px 18px;font-size:.82rem;font-weight:600;
+  color:#ccc;box-shadow:0 8px 28px rgba(0,0,0,.6);z-index:999;
+  animation:toastIn .3s ease;white-space:nowrap;}}
+@keyframes toastIn{{from{{opacity:0;transform:translateX(-50%) translateY(12px);}}to{{opacity:1;transform:translateX(-50%) translateY(0);}}}}
+@keyframes fadeUp{{from{{opacity:0;transform:translateY(6px);}}to{{opacity:1;transform:translateY(0);}}}}
+
+/* ── EMPTY ── */
+.empty{{text-align:center;padding:56px 24px;}}
+.empty-icon{{font-size:2.8rem;opacity:.3;margin-bottom:12px;}}
+.empty-title{{font-size:.95rem;font-weight:700;color:var(--muted2);margin-bottom:5px;}}
+.empty-sub{{font-size:.8rem;color:var(--muted2);opacity:.5;}}
+</style>
+</head>
+<body>
+<div id="app"></div>
 <script>
-(function() {
-  function patchInputs() {
-    document.querySelectorAll('input[type="number"]').forEach(function(el) {
-      el.setAttribute('inputmode', 'decimal');
-      el.setAttribute('pattern', '[0-9]*');
-    });
-  }
-  patchInputs();
-  var obs = new MutationObserver(patchInputs);
-  obs.observe(document.body, { childList: true, subtree: true });
-})();
+const D = {data_json};
+let state = {{
+  view:        D.view,
+  chartMode:   'cats',
+  showPicker:  false,
+  showBudget:  false,
+  expandedCat: null,
+  search:      '',
+  pickerYear:  D.anio,
+  previewData: null,
+  formData:    {{ amt:'0', cat:'Alimentación', desc:'', fecha: todayStr() }},
+}};
+
+function todayStr(){{
+  const n = new Date(); const y = n.getFullYear();
+  const m = String(n.getMonth()+1).padStart(2,'0');
+  const d = String(n.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+d;
+}}
+
+function nav(action, extra=''){{
+  window.parent.location.href = '?action='+action+(extra?'&'+extra:'');
+}}
+
+function donut(cats, size=160){{
+  if(!cats.length) return '';
+  const r=52, cx=size/2, cy=size/2, circ=2*Math.PI*r;
+  let circles='', offset=circ*0.25;
+  cats.forEach(c=>{{
+    const dash=c.pct/100*circ, gap=circ-dash;
+    circles+=`<circle cx="${{cx}}" cy="${{cy}}" r="${{r}}" fill="none"
+      stroke="${{c.color}}" stroke-width="22" stroke-opacity=".9"
+      stroke-dasharray="${{dash.toFixed(2)}} ${{gap.toFixed(2)}}"
+      stroke-dashoffset="${{-offset.toFixed(2)}}"
+      transform="rotate(-90 ${{cx}} ${{cy}})"/>`;
+    offset+=dash;
+  }});
+  const top=cats[0];
+  return `<svg viewBox="0 0 ${{size}} ${{size}}" style="width:100%;display:block;">
+    <circle cx="${{cx}}" cy="${{cy}}" r="${{r+13}}" fill="#080808"/>
+    ${{circles}}
+    <circle cx="${{cx}}" cy="${{cy}}" r="${{r-12}}" fill="#060606"/>
+    <text x="${{cx}}" y="${{cy-8}}" text-anchor="middle" font-size="7.5"
+      font-weight="700" fill="#555" font-family="Syne,sans-serif" letter-spacing="2">
+      ${{top.cat.toUpperCase().slice(0,9)}}</text>
+    <text x="${{cx}}" y="${{cy+16}}" text-anchor="middle" font-size="30"
+      font-weight="800" fill="#f0f0f0" font-family="DM Mono,monospace">${{Math.round(top.pct)}}<tspan
+      font-size="13" fill="${{top.color}}" font-weight="700">%</tspan></text>
+  </svg>`;
+}}
+
+function histChart(hist){{
+  const max=Math.max(...hist.map(h=>h.total),1);
+  const bars=hist.map((h,i)=>{{
+    const pct=Math.max(h.total/max*100,h.total>0?5:0);
+    const isCur=h.mes===D.mes.slice(0,3).toUpperCase();
+    return `<div class="hist-bar-wrap">
+      <div class="hist-bar ${{isCur?'current':h.total>0?'has-val':''}}"
+           style="height:${{pct}}%;background:${{isCur?'var(--green)':h.total>0?'var(--s3)':'var(--s2)'}}"></div>
+      <div class="hist-label">${{h.mes}}</div>
+    </div>`;
+  }});
+  return `<div class="hist-bars">${{bars.join('')}}</div>`;
+}}
+
+function fmtAmt(n){{return 'S/ '+n.toLocaleString('es-PE',{{minimumFractionDigits:2,maximumFractionDigits:2}});}}
+
+function renderMain(){{
+  const movs=D.movs.filter(m=>{{
+    if(!state.search) return true;
+    const q=state.search.toLowerCase();
+    return m.desc.toLowerCase().includes(q)||m.cat.toLowerCase().includes(q);
+  }});
+  const presupPct=D.presup>0?Math.min(D.total/D.presup*100,100):0;
+  const presupColor=presupPct>=100?'var(--danger)':presupPct>=80?'var(--warn)':'var(--green)';
+
+  // Success banner
+  let successHtml='';
+  if(D.show_success&&D.last_saved){{
+    successHtml=`<div class="success-banner">
+      <div class="success-icon">${{D.last_saved.icon}}</div>
+      <div class="success-text">
+        <div class="t">¡Gasto guardado!</div>
+        <div class="s">${{D.last_saved.cat}} · ${{fmtAmt(D.last_saved.amt)}}</div>
+      </div>
+      <button class="btn-icon" onclick="nav('clear_success')" style="margin-left:auto;">✕</button>
+    </div>`;
+  }}
+
+  // Month picker
+  let pickerHtml='';
+  if(state.showPicker){{
+    const abbrs=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+    const chips=abbrs.map((a,i)=>{{
+      const full=D.meses[i];
+      const isActive=full===D.mes&&state.pickerYear===D.anio;
+      return `<div class="month-chip-picker ${{isActive?'active':''}}"
+        onclick="nav('set_month','m=${{encodeURIComponent(full)}}&y=${{state.pickerYear}}')">
+        ${{a}}</div>`;
+    }}).join('');
+    pickerHtml=`<div class="month-picker">
+      <div class="year-nav">
+        <button class="btn-icon" onclick="state.pickerYear--;render()">‹</button>
+        <div class="year-label">${{state.pickerYear}}</div>
+        <button class="btn-icon" onclick="state.pickerYear++;render()">›</button>
+      </div>
+      <div class="month-grid-picker">${{chips}}</div>
+    </div>`;
+  }}
+
+  // Budget form
+  let budgetHtml='';
+  if(state.showBudget){{
+    budgetHtml=`<div class="budget-form">
+      <div class="budget-form-title">Presupuesto para ${{D.mes}} ${{D.anio}}</div>
+      <div class="budget-input-row">
+        <input id="budget-val" class="budget-input" type="number" inputmode="decimal"
+          placeholder="${{D.presup||'0'}}" value="${{D.presup||''}}"
+          onkeydown="if(event.key==='Enter')saveBudget()">
+        <button class="budget-save-btn" onclick="saveBudget()">Guardar</button>
+      </div>
+    </div>`;
+  }}
+
+  // Budget bar
+  let budgetBarHtml='';
+  if(D.presup>0){{
+    budgetBarHtml=`<div class="budget-wrap">
+      <div class="budget-bar-bg">
+        <div class="budget-bar-fill" style="width:${{presupPct.toFixed(1)}}%;background:${{presupColor}};"></div>
+      </div>
+      <div class="budget-meta">
+        <span>${{fmtAmt(D.total)}} gastado</span>
+        <span><b style="color:${{presupColor}};">${{fmtAmt(Math.max(D.presup-D.total,0))}}</b> restante</span>
+      </div>
+    </div>`;
+    if(presupPct>=100){{
+      budgetBarHtml+=`<div class="budget-alert danger">🚨 Superaste el presupuesto de ${{fmtAmt(D.presup)}}</div>`;
+    }}else if(presupPct>=80){{
+      budgetBarHtml+=`<div class="budget-alert warn">⚠️ Usaste el ${{Math.round(presupPct)}}% — quedan ${{fmtAmt(D.presup-D.total)}}</div>`;
+    }}
+  }}
+
+  // Chart section
+  let chartHtml='';
+  if(movs.length>0){{
+    if(state.chartMode==='cats'){{
+      const donutSvg=donut(D.cats);
+      const legend=D.cats.map(c=>`
+        <div class="legend-row">
+          <div class="legend-left">
+            <div class="legend-dot" style="background:${{c.color}};"></div>
+            <div class="legend-name">${{c.cat}}</div>
+          </div>
+          <div class="legend-pct">${{c.pct.toFixed(0)}}%</div>
+        </div>`).join('');
+      chartHtml=`<div class="donut-wrap">
+        <div style="width:160px;flex-shrink:0;">${{donutSvg}}</div>
+        <div class="donut-legend">${{legend}}</div>
+      </div>`;
+
+      // Expanders por categoría
+      const catExpanders=D.cats.map(c=>{{
+        const isOpen=state.expandedCat===c.cat;
+        const catMovs=D.movs.filter(m=>m.cat===c.cat);
+        const movItems=catMovs.map(m=>{{
+          const delBtn=m.legacy?'':
+            `<button class="btn-danger" onclick="event.stopPropagation();confirmDel('${{m.id}}')">🗑</button>`;
+          return `<div class="mov-item">
+            <div class="mov-icon-wrap" style="background:${{m.color}}18;">${{m.icon}}</div>
+            <div class="mov-info">
+              <div class="mov-name">${{m.desc}}</div>
+              <div class="mov-sub">${{m.fecha}}</div>
+            </div>
+            <div class="mov-right">
+              <div class="mov-amt" style="color:${{m.color}};">${{fmtAmt(m.amt)}}</div>
+            </div>
+            ${{delBtn}}
+          </div>`;
+        }}).join('');
+        return `<div class="cat-expander">
+          <div class="cat-header" onclick="state.expandedCat=${{isOpen?'null':"'"+c.cat+"'"}};render()">
+            <div class="cat-icon" style="background:${{c.color}}18;">${{c.icon}}</div>
+            <div class="cat-info">
+              <div class="cat-name">${{c.cat}}</div>
+              <div class="cat-sub">${{catMovs.length}} movimiento${{catMovs.length!==1?'s':''}}</div>
+            </div>
+            <div class="cat-right">
+              <div class="cat-amt">${{fmtAmt(c.amt)}}</div>
+              <div class="cat-pct" style="color:${{c.color}};">${{c.pct.toFixed(0)}}%</div>
+            </div>
+            <div class="cat-chevron ${{isOpen?'open':''}}">›</div>
+          </div>
+          <div class="cat-bar-bg">
+            <div class="cat-bar-fill" style="width:${{c.pct}}%;background:${{c.color}};"></div>
+          </div>
+          <div class="cat-body ${{isOpen?'':'hidden'}}">${{movItems}}</div>
+        </div>`;
+      }}).join('');
+
+      chartHtml+=`<div class="section-label" style="margin-top:16px;">DETALLE POR CATEGORÍA</div>
+        <div class="sort-bar">
+          <span class="sort-lbl">Ordenar:</span>
+          <button class="sort-btn ${{D.sort_by==='fecha'?'active':''}}" onclick="nav('sort','by=fecha')">
+            ${{D.sort_by==='fecha'?(D.sort_asc?'↑':'↓'):'↕'}} Fecha</button>
+          <button class="sort-btn ${{D.sort_by==='monto'?'active':''}}" onclick="nav('sort','by=monto')">
+            ${{D.sort_by==='monto'?(D.sort_asc?'↑':'↓'):'↕'}} Monto</button>
+        </div>
+        ${{catExpanders}}`;
+    }}else{{
+      chartHtml=`<div style="margin:8px 0;">${{histChart(D.hist)}}</div>`;
+      const sortBar=`<div class="sort-bar">
+        <span class="sort-lbl">Ordenar:</span>
+        <button class="sort-btn ${{D.sort_by==='fecha'?'active':''}}" onclick="nav('sort','by=fecha')">
+          ${{D.sort_by==='fecha'?(D.sort_asc?'↑':'↓'):'↕'}} Fecha</button>
+        <button class="sort-btn ${{D.sort_by==='monto'?'active':''}}" onclick="nav('sort','by=monto')">
+          ${{D.sort_by==='monto'?(D.sort_asc?'↑':'↓'):'↕'}} Monto</button>
+      </div>`;
+      const movItems=movs.map(m=>{{
+        const delBtn=m.legacy?'':
+          `<button class="btn-danger" onclick="event.stopPropagation();confirmDel('${{m.id}}')">🗑</button>`;
+        return `<div class="mov-item">
+          <div class="mov-icon-wrap" style="background:${{m.color}}18;">${{m.icon}}</div>
+          <div class="mov-info">
+            <div class="mov-name">${{m.desc}}</div>
+            <div class="mov-sub">${{m.cat}} · ${{m.fecha}}</div>
+          </div>
+          <div class="mov-right">
+            <div class="mov-amt" style="color:${{m.color}};">${{fmtAmt(m.amt)}}</div>
+            <div class="mov-date">${{m.fecha}}</div>
+          </div>
+          ${{delBtn}}
+        </div>`;
+      }}).join('');
+      chartHtml+=`<div class="section-label">MOVIMIENTOS</div>${{sortBar}}<div class="mov-list">${{movItems}}</div>`;
+    }}
+  }}else{{
+    chartHtml=`<div class="empty">
+      <div class="empty-icon">🌱</div>
+      <div class="empty-title">Sin gastos este mes</div>
+      <div class="empty-sub">Toca "+ Nuevo gasto" para empezar</div>
+    </div>`;
+  }}
+
+  return `
+    ${{successHtml}}
+    <div class="badge" style="margin-bottom:2px;">
+      <div class="dot"></div>${{D.now_dow}}, ${{D.now_day}} DE ${{D.now_mes}}
+    </div>
+    <div style="font-size:clamp(1.6rem,5.5vw,2rem);font-weight:800;
+         color:#e8e8e8;margin:6px 0 14px;letter-spacing:-.5px;">Hola, Andrés 👋</div>
+    <button class="btn btn-primary" onclick="nav('goto_add')">＋ Nuevo gasto</button>
+
+    <div class="month-nav" style="margin-top:14px;">
+      <button class="btn btn-icon" onclick="nav('prev_month')">‹</button>
+      <div class="month-nav-label">${{D.mes}} ${{D.anio}}</div>
+      <button class="btn btn-icon" onclick="nav('next_month')">›</button>
+      <button class="btn btn-icon" onclick="state.showPicker=!state.showPicker;state.pickerYear=${{D.anio}};render()"
+        style="${{state.showPicker?'border-color:var(--green);color:var(--green);':''}}">📅</button>
+    </div>
+    ${{pickerHtml}}
+
+    <div class="card-hero">
+      <div class="card-title">TOTAL GASTADO · ${{D.mes.toUpperCase()}}</div>
+      <div class="card-amount">
+        <span class="card-currency">S/</span>
+        <span class="card-num">${{D.total.toLocaleString('es-PE',{{minimumFractionDigits:2,maximumFractionDigits:2}})}}</span>
+      </div>
+      ${{D.presup>0?`<div class="card-sub">de ${{fmtAmt(D.presup)}} presupuestado · <b>${{presupPct.toFixed(0)}}%</b></div>`:''}}
+    </div>
+    ${{budgetBarHtml}}
+
+    <div class="stat-grid">
+      <div class="stat-pill">
+        <div class="stat-lbl">Prom / día</div>
+        <div class="stat-val">${{fmtAmt(D.avg_day)}}</div>
+      </div>
+      <div class="stat-pill">
+        <div class="stat-lbl">Proyección</div>
+        <div class="stat-val">${{fmtAmt(D.proj)}}</div>
+      </div>
+      <div class="stat-pill">
+        <div class="stat-lbl">Movimientos</div>
+        <div class="stat-val">${{D.n_tx}}</div>
+      </div>
+      <div class="stat-pill">
+        <div class="stat-lbl">🔥 Racha</div>
+        <div class="stat-val ${{D.streak>0?'green':''}}">${{D.streak}}d</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center;">
+      <button class="btn btn-secondary" style="flex:1;"
+        onclick="state.showBudget=!state.showBudget;render()">
+        🎯 Presupuesto</button>
+      <a href="data:text/csv;charset=utf-8,${{encodeURIComponent(buildCSV())}}"
+         download="gastos_${{D.mes}}_${{D.anio}}.csv"
+         style="flex:1;display:flex;align-items:center;justify-content:center;
+         height:40px;border-radius:var(--r-md);background:var(--s1);
+         border:1px solid var(--border);color:var(--muted);font-size:.82rem;
+         font-weight:700;text-decoration:none;font-family:var(--font);">
+        ⬇️ CSV</a>
+    </div>
+    ${{budgetHtml}}
+
+    <div class="search-wrap" style="margin-top:14px;">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" placeholder="Buscar gasto o categoría…"
+        value="${{state.search}}"
+        oninput="state.search=this.value;render()">
+    </div>
+
+    <div class="tabs" style="margin-top:12px;">
+      <div class="tab ${{state.chartMode==='cats'?'active':''}}"
+        onclick="state.chartMode='cats';render()">Categorías</div>
+      <div class="tab ${{state.chartMode==='hist'?'active':''}}"
+        onclick="state.chartMode='hist';render()">Histórico</div>
+    </div>
+    ${{chartHtml}}
+  `;
+}}
+
+function renderAdd(){{
+  const pd=state.previewData;
+
+  if(pd){{
+    const cat=D.categories.find(c=>c.key===pd.cat)||D.categories[0];
+    return `
+      <div class="form-header">
+        <button class="btn btn-icon" onclick="state.previewData=null;render()">←</button>
+        <div class="form-title">Confirmar gasto</div>
+      </div>
+      <div class="preview-card">
+        <div class="preview-amount" style="color:${{cat.color}};">${{fmtAmt(pd.amt)}}</div>
+        <div class="preview-row">
+          <span class="preview-lbl">Categoría</span>
+          <span class="preview-val">${{cat.icon}} ${{pd.cat}}</span>
+        </div>
+        <div class="preview-row">
+          <span class="preview-lbl">Descripción</span>
+          <span class="preview-val">${{pd.desc||pd.cat}}</span>
+        </div>
+        <div class="preview-row">
+          <span class="preview-lbl">Fecha</span>
+          <span class="preview-val">${{pd.fecha}}</span>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" onclick="state.previewData=null;render()">✏️ Editar</button>
+        <button class="btn btn-primary" onclick="confirmSave()">✅ Confirmar</button>
+      </div>`;
+  }}
+
+  const fd=state.formData;
+  const isZero=!fd.amt||parseFloat(fd.amt)===0;
+  const chips=D.categories.map(c=>`
+    <div class="cat-chip ${{fd.cat===c.key?'selected':''}}"
+      onclick="state.formData.cat='${{c.key}}';render()">
+      <span class="ico">${{c.icon}}</span>
+      <span class="lbl">${{c.short}}</span>
+    </div>`).join('');
+
+  return `
+    <div class="form-header">
+      <button class="btn btn-icon" onclick="nav('goto_main')">←</button>
+      <div class="form-title">Nuevo Gasto</div>
+    </div>
+
+    <div class="amount-display" onclick="document.getElementById('amt-input').focus()">
+      <div class="amount-field-lbl">MONTO</div>
+      <div class="amount-value ${{isZero?'zero':''}}">${{isZero?'0.00':fd.amt}}</div>
+      <div class="amount-unit">SOLES</div>
+      <input id="amt-input" class="amount-input-hidden" type="number"
+        inputmode="decimal" step="0.01" min="0"
+        value="${{fd.amt}}"
+        oninput="state.formData.amt=this.value;renderAmtDisplay()"
+        onchange="state.formData.amt=this.value;render()">
+    </div>
+
+    <div class="section-label" style="text-align:center;margin-top:18px;">CATEGORÍA</div>
+    <div class="cat-grid">${{chips}}</div>
+
+    <div class="form-field">
+      <div class="form-field-lbl">FECHA</div>
+      <input class="form-input" type="date" value="${{fd.fecha}}"
+        onchange="state.formData.fecha=this.value;render()">
+    </div>
+
+    <div class="form-field">
+      <div class="form-field-lbl">NOTA (opcional)</div>
+      <input class="form-input" type="text" placeholder="Ej: almuerzo, taxi, farmacia…"
+        value="${{fd.desc}}"
+        oninput="state.formData.desc=this.value">
+    </div>
+
+    <div class="form-actions" style="margin-top:20px;">
+      <button class="btn btn-secondary" onclick="nav('goto_main')">Cancelar</button>
+      <button class="btn btn-primary" ${{isZero?'disabled style="opacity:.4;"':''}}
+        onclick="reviewExpense()">Revisar →</button>
+    </div>`;
+}}
+
+function renderAmtDisplay(){{
+  const el=document.querySelector('.amount-value');
+  if(!el) return;
+  const v=state.formData.amt;
+  const isZero=!v||parseFloat(v)===0;
+  el.textContent=isZero?'0.00':v;
+  el.className='amount-value'+(isZero?' zero':'');
+}}
+
+function render(){{
+  document.getElementById('app').innerHTML=
+    state.view==='add'?renderAdd():renderMain();
+  // Auto-focus amount input in add view
+  if(state.view==='add'&&!state.previewData){{
+    setTimeout(()=>{{
+      const inp=document.getElementById('amt-input');
+      if(inp)inp.focus();
+    }},100);
+  }}
+}}
+
+function reviewExpense(){{
+  const fd=state.formData;
+  const amt=parseFloat(fd.amt||'0');
+  if(amt<=0) return;
+  state.previewData={{amt,cat:fd.cat,desc:fd.desc,fecha:fd.fecha}};
+  render();
+}}
+
+function confirmSave(){{
+  const pd=state.previewData;
+  if(!pd) return;
+  nav('save_expense',
+    'amt='+pd.amt+
+    '&cat='+encodeURIComponent(pd.cat)+
+    '&desc='+encodeURIComponent(pd.desc||pd.cat)+
+    '&fecha='+pd.fecha);
+}}
+
+function saveBudget(){{
+  const inp=document.getElementById('budget-val');
+  const val=inp?parseFloat(inp.value||'0'):0;
+  nav('save_budget','mes='+encodeURIComponent(D.mes)+'&anio='+D.anio+'&val='+val);
+}}
+
+function confirmDel(id){{
+  if(confirm('¿Eliminar este gasto? No se puede deshacer.')){{
+    nav('delete','id='+id);
+  }}
+}}
+
+function buildCSV(){{
+  const hdr='FECHA,MES,CATEGORIA,DESCRIPCION,MONTO,ID\\n';
+  const rows=D.movs.map(m=>
+    `${{m.fecha}},${{D.mes}},${{m.cat}},"${{m.desc}}",${{m.amt}},${{m.id}}`
+  ).join('\\n');
+  return hdr+rows;
+}}
+
+// Toast auto-dismiss
+if(D.toast){{
+  setTimeout(()=>nav('clear_toast'),2500);
+}}
+
+// Init
+if(D.view==='add'){{
+  state.view='add';
+  state.formData.fecha=todayStr();
+}}
+render();
 </script>
-""", unsafe_allow_html=True)
+{f'<div class="toast">{payload["toast"]}</div>' if payload.get("toast") else ""}
+</body>
+</html>"""
+    components.html(html, height=900, scrolling=True)
+
+# ============================================================
+# 7) MAIN
+# ============================================================
 try:
-    if st.session_state.view == "main":
-        main_view()
-    else:
-        add_view()
+    handle_actions()
+    df      = load_data()
+    budgets = load_budgets()
+    payload = build_payload(
+        df,
+        st.session_state.sel_month,
+        st.session_state.sel_year,
+        budgets,
+    )
+    render_app(payload)
 except Exception:
-    st.error("Error fatal en la app")
+    st.error("Error en la app")
     st.code(traceback.format_exc())
