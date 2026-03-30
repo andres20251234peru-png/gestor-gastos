@@ -499,10 +499,12 @@ html,body{{background:var(--bg);color:var(--text);font-family:var(--font);
   letter-spacing:3px;text-transform:uppercase;margin:20px 0 8px;}}
 
 /* ── CARD HERO ── */
-.card-hero{{background:var(--s1);border:1px solid var(--border);
-  border-radius:var(--r-xl);padding:28px 22px 22px;
+.card-hero{{background:linear-gradient(160deg,#0f0f0f 0%,#0a0a0a 100%);
+  border:1px solid var(--border);
+  border-radius:var(--r-xl);padding:30px 22px 24px;
   position:relative;overflow:hidden;margin:8px 0;
-  display:flex;flex-direction:column;align-items:center;}}
+  display:flex;flex-direction:column;align-items:center;
+  box-shadow:0 20px 40px rgba(0,0,0,.5);}}
 .card-hero::before{{content:'';position:absolute;top:0;left:50%;
   transform:translateX(-50%);width:40%;height:1px;
   background:linear-gradient(90deg,transparent,rgba(0,224,84,.2),transparent);}}
@@ -510,8 +512,8 @@ html,body{{background:var(--bg);color:var(--text);font-family:var(--font);
   letter-spacing:3px;text-transform:uppercase;margin-bottom:10px;}}
 .card-amount{{display:flex;align-items:baseline;gap:6px;}}
 .card-currency{{font-size:1.1rem;font-weight:600;color:var(--muted2);font-family:var(--mono);}}
-.card-num{{font-size:clamp(2.8rem,10vw,4rem);font-weight:800;color:#fff;
-  font-family:var(--mono);letter-spacing:-2px;line-height:1;}}
+.card-num{{font-size:clamp(3rem,11vw,4.5rem);font-weight:800;color:#fff;
+  font-family:var(--mono);letter-spacing:-3px;line-height:1;text-shadow:0 0 40px rgba(255,255,255,.08);}}
 .card-sub{{color:var(--muted2);font-size:.72rem;font-weight:500;margin-top:8px;}}
 .card-sub b{{color:#2d7a50;font-weight:700;}}
 
@@ -620,13 +622,15 @@ html,body{{background:var(--bg);color:var(--text);font-family:var(--font);
 .cat-body.hidden{{display:none;}}
 
 /* ── HIST CHART ── */
-.hist-bars{{display:flex;align-items:flex-end;gap:4px;height:80px;margin:8px 0 4px;}}
-.hist-bar-wrap{{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;}}
-.hist-bar{{width:100%;border-radius:4px 4px 0 0;background:var(--s3);
-  transition:height .4s ease;min-height:3px;}}
-.hist-bar.current{{background:var(--green);opacity:.85;}}
-.hist-bar.has-val{{background:var(--s3);opacity:1;}}
-.hist-label{{font-size:.55rem;color:var(--muted2);font-weight:600;letter-spacing:.5px;}}
+.hist-wrap{{background:var(--s1);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 14px 12px;margin:4px 0 12px;}}
+.hist-bars{{display:flex;align-items:flex-end;gap:5px;height:100px;margin-bottom:6px;}}
+.hist-bar-wrap{{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;}}
+.hist-bar{{width:100%;border-radius:5px 5px 0 0;transition:height .5s cubic-bezier(.4,0,.2,1);min-height:3px;}}
+.hist-bar.current{{background:var(--green);box-shadow:0 0 10px rgba(0,224,84,.3);}}
+.hist-bar.has-val{{background:var(--s3);}}
+.hist-bar.empty{{background:var(--s2);}}
+.hist-label{{font-size:.52rem;color:var(--muted2);font-weight:600;letter-spacing:.3px;text-transform:uppercase;}}
+.hist-label.current{{color:var(--green);}}
 
 /* ── FORM NUEVO GASTO ── */
 .form-header{{display:flex;align-items:center;gap:12px;padding:12px 0 16px;}}
@@ -759,7 +763,8 @@ function todayStr(){{
 }}
 
 function nav(action, extra=''){{
-  window.parent.location.href = '?action='+action+(extra?'&'+extra:'');
+  const base=window.location.href.split('?')[0];
+  window.location.href=base+'?action='+action+(extra?'&'+extra:'');
 }}
 
 function donut(cats, size=160){{
@@ -791,16 +796,17 @@ function donut(cats, size=160){{
 
 function histChart(hist){{
   const max=Math.max(...hist.map(h=>h.total),1);
+  const curMes=D.mes.slice(0,3).toUpperCase();
   const bars=hist.map((h,i)=>{{
-    const pct=Math.max(h.total/max*100,h.total>0?5:0);
-    const isCur=h.mes===D.mes.slice(0,3).toUpperCase();
+    const pct=Math.max(h.total/max*100,h.total>0?6:0);
+    const isCur=h.mes===curMes;
+    const cls=isCur?'current':h.total>0?'has-val':'empty';
     return `<div class="hist-bar-wrap">
-      <div class="hist-bar ${{isCur?'current':h.total>0?'has-val':''}}"
-           style="height:${{pct}}%;background:${{isCur?'var(--green)':h.total>0?'var(--s3)':'var(--s2)'}}"></div>
-      <div class="hist-label">${{h.mes}}</div>
+      <div class="hist-bar ${{cls}}" style="height:${{pct}}%;"></div>
+      <div class="hist-label ${{isCur?'current':''}}">${{h.mes}}</div>
     </div>`;
   }});
-  return `<div class="hist-bars">${{bars.join('')}}</div>`;
+  return `<div class="hist-wrap"><div class="hist-bars">${{bars.join('')}}</div></div>`;
 }}
 
 function fmtAmt(n){{return 'S/ '+n.toLocaleString('es-PE',{{minimumFractionDigits:2,maximumFractionDigits:2}});}}
@@ -987,8 +993,8 @@ function renderMain(){{
     <div class="badge" style="margin-bottom:2px;">
       <div class="dot"></div>${{D.now_dow}}, ${{D.now_day}} DE ${{D.now_mes}}
     </div>
-    <div style="font-size:clamp(1.6rem,5.5vw,2rem);font-weight:800;
-         color:#e8e8e8;margin:6px 0 14px;letter-spacing:-.5px;">Hola, Andrés 👋</div>
+    <div style="font-size:clamp(1.8rem,6vw,2.4rem);font-weight:800;
+         color:#fff;margin:6px 0 16px;letter-spacing:-.8px;line-height:1.1;">Hola, Andrés 👋</div>
     <button class="btn btn-primary" onclick="nav('goto_add')">＋ Nuevo gasto</button>
 
     <div class="month-nav" style="margin-top:14px;">
@@ -1199,6 +1205,14 @@ function buildCSV(){{
   return hdr+rows;
 }}
 
+// Auto-resize iframe to content height
+function resizeIframe(){{
+  const h = document.body.scrollHeight;
+  window.parent.postMessage({{type:'streamlit:setFrameHeight', height:h}}, '*');
+}}
+const resizeObserver = new ResizeObserver(resizeIframe);
+resizeObserver.observe(document.body);
+
 // Toast auto-dismiss
 if(D.toast){{
   setTimeout(()=>nav('clear_toast'),2500);
@@ -1210,11 +1224,13 @@ if(D.view==='add'){{
   state.formData.fecha=todayStr();
 }}
 render();
+// Initial resize after render
+setTimeout(resizeIframe, 200);
 </script>
 {f'<div class="toast">{payload["toast"]}</div>' if payload.get("toast") else ""}
 </body>
 </html>"""
-    components.html(html, height=900, scrolling=True)
+    components.html(html, height=3000, scrolling=True)
 
 # ============================================================
 # 7) MAIN
