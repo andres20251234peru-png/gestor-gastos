@@ -5,6 +5,7 @@
 # ============================================================
 
 import streamlit as st
+import streamlit.components.v1 as components
 import datetime as dt
 import gspread
 from google.oauth2.service_account import Credentials
@@ -756,9 +757,22 @@ function todayStr(){{
 }}
 
 function nav(action, extra=''){{
-  let url='?action='+encodeURIComponent(action);
-  if(extra) url+='&'+extra;
-  window.location.href=url;
+  // Get the real Streamlit page URL from the parent window
+  let base;
+  try {{
+    base = window.parent.location.href.split('?')[0];
+  }} catch(e) {{
+    // Cross-origin fallback: use the referrer or construct from known patterns
+    base = document.referrer ? document.referrer.split('?')[0] : '/';
+  }}
+  let url = base + '?action=' + encodeURIComponent(action);
+  if(extra) url += '&' + extra;
+  // Navigate the parent window (Streamlit page), not this iframe
+  try {{
+    window.parent.location.href = url;
+  }} catch(e) {{
+    window.location.href = url;
+  }}
 }}
   Object.entries(params).forEach(([k,v])=>{{
     const inp=document.createElement('input');
@@ -1223,8 +1237,7 @@ render();
 </script>
 {f'<div class="toast">{payload["toast"]}</div>' if payload.get("toast") else ""}
 """
-    # Render HTML directly in Streamlit page (no iframe = no security restrictions)
-    st.markdown(html, unsafe_allow_html=True)
+    components.html(html, height=3000, scrolling=True)
 
 # ============================================================
 # 7) MAIN
